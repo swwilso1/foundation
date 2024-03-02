@@ -137,9 +137,15 @@ mod tests {
         assert_eq!(FileSystem::from_str("fat32").unwrap(), FileSystem::Fat32);
         assert_eq!(FileSystem::from_str("exfat").unwrap(), FileSystem::ExFat);
         assert_eq!(FileSystem::from_str("ntfs").unwrap(), FileSystem::NTFS);
-        assert_eq!(FileSystem::from_str("hfsplus").unwrap(), FileSystem::HFSPlus);
+        assert_eq!(
+            FileSystem::from_str("hfsplus").unwrap(),
+            FileSystem::HFSPlus
+        );
         assert_eq!(FileSystem::from_str("apfs").unwrap(), FileSystem::APFS);
-        assert_eq!(FileSystem::from_str("iso9660").unwrap(), FileSystem::ISO9660);
+        assert_eq!(
+            FileSystem::from_str("iso9660").unwrap(),
+            FileSystem::ISO9660
+        );
         assert_eq!(FileSystem::from_str("cifs").unwrap(), FileSystem::CIFS);
         assert!(FileSystem::from_str("invalid").is_err());
     }

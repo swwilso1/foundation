@@ -48,7 +48,7 @@ mod tests {
         let x = Arc::new(RwLock::new(0));
         let x_c = x.clone();
         {
-           let _defer = Defer::new(move || *x_c.write().unwrap() = 1);
+            let _defer = Defer::new(move || *x_c.write().unwrap() = 1);
         }
         assert_eq!(*x.read().unwrap(), 1);
     }

@@ -28,7 +28,6 @@ pub enum FoundationError {
     GenericError(Box<dyn Error + Send + Sync + 'static>),
 }
 
-
 impl From<std::io::Error> for FoundationError {
     fn from(error: std::io::Error) -> Self {
         FoundationError::IO(error)

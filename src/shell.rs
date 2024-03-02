@@ -17,7 +17,10 @@ impl Shell {
     /// # Returns
     ///
     /// A Result containing the output of the command if successful, or a `FoundationError` if an error occurred.
-    pub fn execute_command(command: &str, arguments: Vec<String>) -> Result<Output, FoundationError> {
+    pub fn execute_command(
+        command: &str,
+        arguments: Vec<String>,
+    ) -> Result<Output, FoundationError> {
         let args: Vec<&str> = arguments.iter().map(|s| s.as_str()).collect();
         let output = if cfg!(target_os = "windows") {
             Command::new("cmd")

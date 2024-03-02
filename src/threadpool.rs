@@ -117,7 +117,10 @@ impl Worker {
 
         // TODO: Should we return an error, instead of logging an error?
         if let Err(e) = idle_sender.send(id) {
-            error!("Unable to send initial idle message for worker {} to scheduler: {}", id, e);
+            error!(
+                "Unable to send initial idle message for worker {} to scheduler: {}",
+                id, e
+            );
         }
 
         Worker {
@@ -233,11 +236,19 @@ impl ThreadPool {
                         Ok(idle_worker) => {
                             // Get the worker object, so we can add the job to the worker thread
                             // channel.
-                            if let Some(worker) = scheduler_worker_manager.lock().unwrap().workers.get_mut(&idle_worker) {
+                            if let Some(worker) = scheduler_worker_manager
+                                .lock()
+                                .unwrap()
+                                .workers
+                                .get_mut(&idle_worker)
+                            {
                                 worker.add_job(job)?;
                             } else {
                                 // TODO: Do we want to drop the job?
-                                error!("ThreadPool could not find worker {}, dropping job.", idle_worker);
+                                error!(
+                                    "ThreadPool could not find worker {}, dropping job.",
+                                    idle_worker
+                                );
                             }
                         }
                         Err(e) => {
@@ -245,14 +256,24 @@ impl ThreadPool {
                                 TryRecvError::Empty => {
                                     // There should be a better way to lock the manager and access the contents without
                                     // using the lock method repeatedly to access the contents.
-                                    let current_workers = scheduler_worker_manager.lock().unwrap().current_workers;
-                                    let max_workers = scheduler_worker_manager.lock().unwrap().max_workers;
+                                    let current_workers =
+                                        scheduler_worker_manager.lock().unwrap().current_workers;
+                                    let max_workers =
+                                        scheduler_worker_manager.lock().unwrap().max_workers;
                                     if current_workers < max_workers {
-                                        let next_worker_id = scheduler_worker_manager.lock().unwrap().next_worker_id;
-                                        let worker = Worker::new(next_worker_id, idle_sender.clone());
-                                        scheduler_worker_manager.lock().unwrap().workers.insert(next_worker_id, worker);
-                                        scheduler_worker_manager.lock().unwrap().next_worker_id += 1;
-                                        scheduler_worker_manager.lock().unwrap().current_workers += 1;
+                                        let next_worker_id =
+                                            scheduler_worker_manager.lock().unwrap().next_worker_id;
+                                        let worker =
+                                            Worker::new(next_worker_id, idle_sender.clone());
+                                        scheduler_worker_manager
+                                            .lock()
+                                            .unwrap()
+                                            .workers
+                                            .insert(next_worker_id, worker);
+                                        scheduler_worker_manager.lock().unwrap().next_worker_id +=
+                                            1;
+                                        scheduler_worker_manager.lock().unwrap().current_workers +=
+                                            1;
                                     }
 
                                     // We may have added a worker to the pool, so now we just wait till we get an
@@ -261,7 +282,12 @@ impl ThreadPool {
                                     if let Some(idle_worker) = idle_worker {
                                         // Get the worker object, so we can add the job to the worker thread
                                         // channel.
-                                        if let Some(worker) = scheduler_worker_manager.lock().unwrap().workers.get_mut(&idle_worker) {
+                                        if let Some(worker) = scheduler_worker_manager
+                                            .lock()
+                                            .unwrap()
+                                            .workers
+                                            .get_mut(&idle_worker)
+                                        {
                                             worker.add_job(job)?;
                                         } else {
                                             error!("ThreadPool could not find worker {}, dropping job.", idle_worker);
@@ -314,7 +340,6 @@ impl ThreadPool {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
