@@ -3,6 +3,7 @@ pub mod error;
 pub mod filesystem;
 pub mod multiqueue;
 pub mod partition;
+pub mod progressmeter;
 pub mod protected;
 pub mod result;
 pub mod shell;
