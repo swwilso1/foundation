@@ -1,6 +1,11 @@
 //! The `progressmeter` module provides a simple progress meter for tracking the progress of a
 //! long-running task.
 
+/// The `Notifier` type is a type alias for a boxed closure that receives notifications when the
+/// progress meter makes progress towards the total goal. The value passed to the function represents
+/// the current percent completed out of 100.
+pub type Notifier = Box<dyn FnMut(u8) -> ()>;
+
 /// The `ProgressMeter` struct provides a simple progress meter for tracking the progress of a
 /// long-running task. The user provides a notification closure or function that receives notifications
 /// when the progress meter makes progress towards the total goal. The progress meter can be
@@ -10,7 +15,7 @@ pub struct ProgressMeter {
     /// The notification function that receives calls when the progress meter makes progress towards
     /// the total goal (in percentage terms). The value passed to the function represents the current
     /// percent completed out of 100.
-    notifier: Box<dyn FnMut(u8) -> ()>,
+    notifier: Notifier,
 
     /// The total number of units that the progress meter is tracking.
     meter_total: u64,
@@ -47,10 +52,7 @@ impl ProgressMeter {
     /// # Returns
     ///
     /// A new `ProgressMeter` with the given notifier function and total number of units to track.
-    pub fn new_with_notifier_and_size(
-        notifier: Box<dyn FnMut(u8) -> ()>,
-        meter_total: u64,
-    ) -> ProgressMeter {
+    pub fn new_with_notifier_and_size(notifier: Notifier, meter_total: u64) -> ProgressMeter {
         ProgressMeter {
             notifier,
             meter_total,
@@ -112,7 +114,7 @@ impl ProgressMeter {
     /// * `notifier` - The notification function that receives calls when the progress meter makes
     /// progress towards the total goal (in percentage terms). The value passed to the function
     /// represents the current percent completed out of 100.
-    pub fn set_notifier(&mut self, notifier: Box<dyn FnMut(u8) -> ()>) {
+    pub fn set_notifier(&mut self, notifier: Notifier) {
         self.notifier = notifier;
     }
 }
