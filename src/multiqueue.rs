@@ -1038,4 +1038,106 @@ mod tests {
 
         thread_pool.stop();
     }
+
+    #[tokio::test]
+    async fn test_clone_with_threadpool() {
+        let mut thread_pool = ThreadPool::new(4);
+        let queue: Arc<Mutex<MultiQueue<i32>>> = Arc::new(Mutex::new(MultiQueue::new()));
+        let fork = queue.clone();
+
+        let finished = Arc::new(Mutex::new(false));
+        let finished2 = finished.clone();
+
+        let thread2_finished = Arc::new(Mutex::new(false));
+        let thread2_finished2 = thread2_finished.clone();
+
+        let mut job1 = ThreadJob::new();
+        job1.add_task(Box::pin(async move {
+            // Load the queue.
+            if let Ok(mut queue) = queue.lock() {
+                queue.push_back(1).unwrap();
+                queue.push_back(2).unwrap();
+                queue.push_back(3).unwrap();
+            }
+            // queue.push_back(1).unwrap();
+            // queue.push_back(2).unwrap();
+            // queue.push_back(3).unwrap();
+
+            while *thread2_finished2.lock().unwrap() == false {
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            }
+
+            if let Ok(queue) = queue.lock() {
+                assert!(queue.empty());
+            }
+
+            // assert!(queue.empty());
+
+            Ok(())
+        }));
+
+        let mut job2 = ThreadJob::new();
+        job2.add_task(Box::pin(async move {
+            let mut empty = fork.lock().unwrap().empty();
+            while empty {
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                empty = fork.lock().unwrap().empty();
+            }
+
+            if let Ok(mut fork) = fork.lock() {
+                assert_eq!(fork.front(), Some(&1));
+                fork.pop_front();
+            }
+
+            // assert_eq!(fork.front(), Some(&1));
+            // fork.pop_front();
+
+            empty = fork.lock().unwrap().empty();
+            while empty {
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                empty = fork.lock().unwrap().empty();
+            }
+
+            if let Ok(mut fork) = fork.lock() {
+                assert_eq!(fork.front(), Some(&2));
+                fork.pop_front();
+            }
+            // assert_eq!(fork.front(), Some(&2));
+            // fork.pop_front();
+
+            empty = fork.lock().unwrap().empty();
+            while empty {
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                empty = fork.lock().unwrap().empty();
+            }
+
+            if let Ok(mut fork) = fork.lock() {
+                assert_eq!(fork.front(), Some(&3));
+                fork.pop_front();
+                assert_eq!(fork.size(), 0);
+                assert!(fork.empty());
+            }
+            // assert_eq!(fork.front(), Some(&3));
+            // fork.pop_front();
+            // assert_eq!(fork.size(), 0);
+            // assert!(fork.empty());
+
+            *thread2_finished.lock().unwrap() = true;
+            // Just give up the CPU so that the other thread can finish.  This is not super
+            // deterministic.
+            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+            *finished2.lock().unwrap() = true;
+
+            Ok(())
+        }));
+
+        thread_pool.add_job(job1).unwrap();
+        thread_pool.add_job(job2).unwrap();
+
+        while !*finished.lock().unwrap() {
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+
+        thread_pool.stop();
+    }
 }
