@@ -1,6 +1,7 @@
 pub mod defer;
 pub mod error;
 pub mod filesystem;
+pub mod multiqueue;
 pub mod partition;
 pub mod protected;
 pub mod result;
