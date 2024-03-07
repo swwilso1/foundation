@@ -4,7 +4,7 @@
 /// The `Notifier` type is a type alias for a boxed closure that receives notifications when the
 /// progress meter makes progress towards the total goal. The value passed to the function represents
 /// the current percent completed out of 100.
-pub type Notifier = Box<dyn FnMut(u8) -> ()>;
+pub type Notifier = Box<dyn FnMut(u8) -> () + Send + Sync + 'static>;
 
 /// The `ProgressMeter` struct provides a simple progress meter for tracking the progress of a
 /// long-running task. The user provides a notification closure or function that receives notifications
