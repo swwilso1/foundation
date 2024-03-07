@@ -512,10 +512,11 @@ impl<T> Drop for MultiQueue<T> {
     }
 }
 
-// We provide Send implementation for MultiQueue so that we can move a MultiQueue to
-// a different thread. We take care to make sure the pointer usage in the MultiQueue
-// is all heap based and not thread specific or stack based.
+// We provide Send + Sync implementation for MultiQueue so that we can move a MultiQueue to
+// a different thread or async execution. We take care to make sure the pointer usage in the
+// MultiQueue is all heap based and not thread specific or stack based.
 unsafe impl<T> Send for MultiQueue<T> {}
+unsafe impl<T> Sync for MultiQueue<T> {}
 
 pub struct MultiQueueIterator<'a, T> {
     head: *mut Block<T>,
@@ -556,6 +557,7 @@ impl<'a, T> Iterator for MultiQueueIterator<'a, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::threadpool::{ThreadJob, ThreadPool};
 
     #[test]
     fn test_multiqueue() {
@@ -945,5 +947,95 @@ mod tests {
         let handles = vec![handle1, handle2];
 
         futures::future::join_all(handles).await;
+    }
+
+    #[tokio::test]
+    async fn test_multiqueue_thread_access() {
+        let mut queue = MultiQueue::new();
+        let mut fork = queue.fork().unwrap();
+
+        let handle1 = tokio::spawn(async move {
+            queue.push_back(1).unwrap();
+            queue.push_back(2).unwrap();
+            queue.push_back(3).unwrap();
+        });
+
+        let handle2 = tokio::spawn(async move {
+            assert_eq!(fork.front(), Some(&1));
+            fork.pop_front();
+            assert_eq!(fork.front(), Some(&2));
+            fork.pop_front();
+            assert_eq!(fork.front(), Some(&3));
+        });
+
+        let handles = vec![handle1, handle2];
+
+        futures::future::join_all(handles).await;
+    }
+
+    #[tokio::test]
+    async fn test_with_threadpool() {
+        let mut thread_pool = ThreadPool::new(4);
+        let mut queue: MultiQueue<i32> = MultiQueue::new();
+        let mut fork = queue.fork().unwrap();
+
+        let finished = Arc::new(Mutex::new(false));
+        let finished2 = finished.clone();
+
+        let mut job1 = ThreadJob::new();
+        job1.add_task(Box::pin(async move {
+            // Load the queue.
+            queue.push_back(1).unwrap();
+            queue.push_back(2).unwrap();
+            queue.push_back(3).unwrap();
+
+            // Now drain our part of the queue.
+            queue.pop_front();
+            queue.pop_front();
+            queue.pop_front();
+
+            assert!(queue.empty());
+
+            Ok(())
+        }));
+
+        let mut job2 = ThreadJob::new();
+        job2.add_task(Box::pin(async move {
+            while fork.empty() {
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            }
+
+            assert_eq!(fork.front(), Some(&1));
+            fork.pop_front();
+
+            while fork.empty() {
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            }
+
+            assert_eq!(fork.front(), Some(&2));
+            fork.pop_front();
+
+            while fork.empty() {
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            }
+
+            assert_eq!(fork.front(), Some(&3));
+            fork.pop_front();
+            assert_eq!(fork.size(), 0);
+            assert!(fork.empty());
+
+            *finished2.lock().unwrap() = true;
+
+            Ok(())
+        }));
+
+        thread_pool.add_job(job1).unwrap();
+        thread_pool.add_job(job2).unwrap();
+
+        while !*finished.lock().unwrap() {
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+
+        thread_pool.stop();
     }
 }
