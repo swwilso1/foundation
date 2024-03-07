@@ -512,6 +512,11 @@ impl<T> Drop for MultiQueue<T> {
     }
 }
 
+// We provide Send implementation for MultiQueue so that we can move a MultiQueue to
+// a different thread. We take care to make sure the pointer usage in the MultiQueue
+// is all heap based and not thread specific or stack based.
+unsafe impl<T> Send for MultiQueue<T> {}
+
 pub struct MultiQueueIterator<'a, T> {
     head: *mut Block<T>,
 
@@ -883,4 +888,63 @@ mod tests {
         assert_eq!(queue.size(), 0);
         assert_eq!(fork.size(), 0);
     }
+
+    const BUFFER_SIZE: usize = 8192;
+
+    #[test]
+    fn test_with_buffer() {
+        let mut queue: MultiQueue<[u8; BUFFER_SIZE]> = MultiQueue::new();
+        let mut fork = queue.fork().unwrap();
+        let mut buffer = [0u8; BUFFER_SIZE];
+        for i in 0..BUFFER_SIZE {
+            buffer[i] = i as u8;
+        }
+        queue.push_back(buffer).unwrap();
+        fork.push_back(buffer).unwrap();
+        let iter = queue.iter();
+        let fork_iter = fork.iter();
+        let mut count = 0;
+        for (a, b) in iter.zip(fork_iter) {
+            for i in 0..BUFFER_SIZE {
+                assert_eq!(a[i], b[i]);
+            }
+            count += 1;
+        }
+        assert_eq!(count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_multiqueue_in_tokio() {
+        let mut queue = MultiQueue::new();
+
+        queue.push_back(1).unwrap();
+        queue.push_back(2).unwrap();
+        queue.push_back(3).unwrap();
+
+        let mut fork = queue.fork().unwrap();
+
+        let handle1 = tokio::spawn(async move {
+            assert_eq!(fork.front(), Some(&1));
+            fork.pop_front();
+            assert_eq!(fork.front(), Some(&2));
+            fork.pop_front();
+            assert_eq!(fork.front(), Some(&3));
+        });
+
+        let handle2 = tokio::spawn(async move {
+            let mut iter = queue.iter();
+            assert_eq!(iter.next(), Some(&1));
+            assert_eq!(iter.next(), Some(&2));
+            assert_eq!(iter.next(), Some(&3));
+            queue.pop_front();
+            queue.pop_front();
+            queue.pop_front();
+            assert_eq!(queue.size(), 0);
+        });
+
+        let handles = vec![handle1, handle2];
+
+        futures::future::join_all(handles).await;
+    }
 }
+
