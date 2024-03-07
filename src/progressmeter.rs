@@ -23,6 +23,17 @@ pub struct ProgressMeter {
 }
 
 impl ProgressMeter {
+    /// Create a new `ProgressMeter` with the default notifier function and a total number of units
+    /// to track of 1.
+    pub fn new() -> ProgressMeter {
+        ProgressMeter {
+            notifier: Box::new(|_| {}),
+            meter_total: 1,
+            meter_current: 0,
+            last_percent: 0,
+        }
+    }
+
     /// Create a new `ProgressMeter` with the given notifier function and total number of units to
     /// track.
     ///
@@ -36,7 +47,10 @@ impl ProgressMeter {
     /// # Returns
     ///
     /// A new `ProgressMeter` with the given notifier function and total number of units to track.
-    pub fn new(notifier: Box<dyn FnMut(u8) -> ()>, meter_total: u64) -> ProgressMeter {
+    pub fn new_with_notifier_and_size(
+        notifier: Box<dyn FnMut(u8) -> ()>,
+        meter_total: u64,
+    ) -> ProgressMeter {
         ProgressMeter {
             notifier,
             meter_total,
@@ -110,7 +124,7 @@ mod tests {
     #[tokio::test]
     async fn test_progress_meter() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<u8>();
-        let mut progress_meter = ProgressMeter::new(
+        let mut progress_meter = ProgressMeter::new_with_notifier_and_size(
             Box::new(move |percent| {
                 tx.send(percent).unwrap();
             }),
