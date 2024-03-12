@@ -8,5 +8,6 @@ pub mod progressmeter;
 pub mod protected;
 pub mod result;
 pub mod shell;
+pub mod sync;
 pub mod threadcontroller;
 pub mod threadpool;
