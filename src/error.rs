@@ -1,3 +1,5 @@
+use crate::multiqueue::MultiQueueError;
+
 use std::error::Error;
 use thiserror::Error;
 
@@ -26,6 +28,9 @@ pub enum FoundationError {
 
     #[error("{0}")]
     GenericError(Box<dyn Error + Send + Sync + 'static>),
+
+    #[error("MultiQueue error: {0}")]
+    MultiQueueError(String),
 }
 
 impl From<std::io::Error> for FoundationError {
@@ -37,5 +42,11 @@ impl From<std::io::Error> for FoundationError {
 impl From<Box<dyn std::error::Error + Send + Sync + 'static>> for FoundationError {
     fn from(value: Box<dyn Error + Send + Sync + 'static>) -> Self {
         FoundationError::GenericError(value)
+    }
+}
+
+impl<T> From<MultiQueueError<T>> for FoundationError {
+    fn from(error: MultiQueueError<T>) -> Self {
+        FoundationError::MultiQueueError(error.to_string())
     }
 }

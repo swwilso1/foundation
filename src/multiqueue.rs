@@ -2,10 +2,39 @@
 //! safety when used between threads and for forking the queue to create a new queue that shares
 //! the same underlying data.
 
-use crate::error::FoundationError;
 use log::error;
+use std::error::Error;
+use std::fmt;
+use std::fmt::Display;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
+
+/// Error returned by MultiQueue functions.
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum MultiQueueError<T> {
+    /// Failed to add item to the queue.
+    Push(T),
+
+    /// Failed to fork the queue.
+    Fork,
+}
+
+impl<T> Display for MultiQueueError<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MultiQueueError::Push(_) => write!(f, "failed to add item to the queue"),
+            MultiQueueError::Fork => write!(f, "failed to fork the queue"),
+        }
+    }
+}
+
+impl<T> fmt::Debug for MultiQueueError<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MultiQueueError").finish_non_exhaustive()
+    }
+}
+
+impl<T> Error for MultiQueueError<T> {}
 
 // This module makes use of raw pointers and unsafe code to implement the container structure.
 // Normally, we would use a safe pre-existing Rust container, but for speed and correctness, we
@@ -58,6 +87,9 @@ pub struct Core<T> {
 
     /// The reference count of the core.
     reference_count: u32,
+
+    /// The number of forks of the queue currently at the end of the queue.
+    count_at_end_of_queue: u32,
 }
 
 impl<T> Core<T> {
@@ -71,6 +103,7 @@ impl<T> Core<T> {
             head: std::ptr::null_mut(),
             tail: std::ptr::null_mut(),
             reference_count: 1,
+            count_at_end_of_queue: 0,
         }
     }
 
@@ -183,9 +216,32 @@ impl<T> Core<T> {
         count
     }
 
+    /// Return the number of messages shared by all forks of the queue. This number may include
+    /// messages that the current fork of the queue has already read.
+    ///
+    /// # Returns
+    ///
+    /// The number of shared messages in the queue.
+    pub fn shared_size(&self) -> usize {
+        let size = self.size();
+        if self.count_at_end_of_queue == self.reference_count && size == 1 {
+            0
+        } else {
+            size
+        }
+    }
+
     /// The `empty` function returns true if the queue is empty.
     pub fn empty(&self) -> bool {
         self.head.is_null()
+    }
+}
+
+impl<T> Drop for Core<T> {
+    fn drop(&mut self) {
+        // Reference counts should have all gone to zero at this point, try
+        // to clean up the queue memory.
+        self.update();
     }
 }
 
@@ -222,8 +278,8 @@ impl<T> MultiQueue<T> {
     ///
     /// # Returns
     ///
-    /// An `Ok` result if the object was added to the queue, otherwise a `FoundationError`.
-    pub fn push_back(&mut self, object: T) -> Result<(), FoundationError> {
+    /// An `Ok` result if the object was added to the queue, otherwise a `MultiQueueError`.
+    pub fn push_back(&mut self, object: T) -> Result<(), MultiQueueError<T>> {
         match self.core.lock() {
             Ok(mut core) => {
                 core.push_back(object);
@@ -232,10 +288,7 @@ impl<T> MultiQueue<T> {
                 }
                 Ok(())
             }
-            Err(e) => Err(FoundationError::OperationFailed(format!(
-                "Could not lock the MultiQueue core: {}",
-                e
-            ))),
+            Err(_e) => Err(MultiQueueError::Push(object)),
         }
     }
 
@@ -295,6 +348,7 @@ impl<T> MultiQueue<T> {
 
                     self.head = next;
                     self.at_end_of_queue = false;
+                    core.count_at_end_of_queue -= 1;
                 }
 
                 assert_eq!(self.head.is_null(), false, "head is null");
@@ -341,6 +395,7 @@ impl<T> MultiQueue<T> {
 
                     self.head = next;
                     self.at_end_of_queue = false;
+                    core.count_at_end_of_queue -= 1;
                 }
 
                 assert_eq!(self.head.is_null(), false, "head is null");
@@ -368,25 +423,64 @@ impl<T> MultiQueue<T> {
                     self.head = core.head;
                 }
 
-                let next = unsafe { (*self.head).next };
-
-                if next != std::ptr::null_mut() {
-                    if self.at_end_of_queue {
-                        self.at_end_of_queue = false;
-                    }
+                if self.at_end_of_queue {
+                    // We are at the end of the queue, and we have a valid head pointer.
+                    // This means that we will discard the head pointer and move to the next
+                    // pointer in the list if it exists.  However, the pop front operation
+                    // means that we pop the next valid block and move beyond it.  Our current
+                    // head pointer is not the current valid block.
 
                     unsafe {
+                        // If the next block is still null then we don't do anything else, we have
+                        // no other block to move to.
+                        if (*self.head).next == std::ptr::null_mut() {
+                            return;
+                        }
+
+                        // Decrement the reference count on the current head block.
                         (*self.head).reference_count -= 1;
+                        self.head = (*self.head).next;
                     }
-                    self.head = next;
-                    core.update();
+
+                    // Now, if the new head has a next block of null, then the pop operation
+                    // will leave us at the end of the list.
+                    unsafe {
+                        // We are already at the end of the queue, so we only care about the
+                        // case where the next block is not null.
+                        if (*self.head).next != std::ptr::null_mut() {
+                            (*self.head).reference_count -= 1;
+                            self.head = (*self.head).next;
+                            self.at_end_of_queue = false;
+                            core.count_at_end_of_queue -= 1;
+                        }
+                    }
                 } else {
-                    self.at_end_of_queue = true;
+                    // If I am not at the end of the queue, then the current head block is the
+                    // next block in the queue.  I can decrement its reference count and go
+                    // to the next block.
+                    unsafe {
+                        if (*self.head).next == std::ptr::null_mut() {
+                            self.at_end_of_queue = true;
+                            core.count_at_end_of_queue += 1;
+                        } else {
+                            (*self.head).reference_count -= 1;
+                            self.head = (*self.head).next;
+                        }
+                    }
                 }
+
+                core.update();
             }
             Err(e) => {
                 error!("Could not lock the MultiQueue core: {}", e);
             }
+        }
+    }
+
+    /// The `pop_all` function removes all the objects from the queue.
+    pub fn pop_all(&mut self) {
+        while self.size() > 0 {
+            self.pop_front();
         }
     }
 
@@ -396,8 +490,8 @@ impl<T> MultiQueue<T> {
     /// # Returns
     ///
     /// A new `MultiQueue` object that shares the same underlying data as the original queue or a
-    /// `FoundationError` if the fork operation failed.
-    pub fn fork(&mut self) -> Result<MultiQueue<T>, FoundationError> {
+    /// `MultiQueueError` if the fork operation failed.
+    pub fn fork(&mut self) -> Result<MultiQueue<T>, MultiQueueError<T>> {
         match self.core.lock() {
             Ok(mut core) => {
                 // Update the reference counts of the blocks in the queue before we create
@@ -410,12 +504,13 @@ impl<T> MultiQueue<T> {
                         tmp = (*tmp).next;
                     }
                 }
+
+                if self.at_end_of_queue {
+                    core.count_at_end_of_queue += 1;
+                }
             }
-            Err(e) => {
-                return Err(FoundationError::OperationFailed(format!(
-                    "Could not lock the MultiQueue core: {}",
-                    e
-                )));
+            Err(_e) => {
+                return Err(MultiQueueError::Fork);
             }
         }
 
@@ -463,6 +558,25 @@ impl<T> MultiQueue<T> {
         }
     }
 
+    /// The `shared_size` function returns the number of elements in the queue
+    /// that are shared between multiple forks of the queue.
+    pub fn shared_size(&self) -> usize {
+        match self.core.lock() {
+            Ok(core) => {
+                if core.count_at_end_of_queue == core.reference_count {
+                    unsafe {
+                        return self.count_size_from((*core.head).next);
+                    }
+                }
+                core.shared_size()
+            }
+            Err(_) => {
+                error!("Could not lock the MultiQueue core");
+                0
+            }
+        }
+    }
+
     /// The `references` function returns the number of references to the core of the queue.
     /// If an error occurs while locking the core, then this function returns 0.
     pub fn references(&self) -> u32 {
@@ -497,6 +611,19 @@ impl<T> MultiQueue<T> {
 
 impl<T> Drop for MultiQueue<T> {
     fn drop(&mut self) {
+        // We need to pop everything off our queue so that we decrement the reference counts.
+        self.pop_all();
+
+        // pop_all will take us to the last element of the list, but it will not decrement
+        // the reference count. Since we are dropping we need to decrement that reference
+        // count.
+        if self.head != std::ptr::null_mut() {
+            unsafe {
+                (*self.head).reference_count -= 1;
+            }
+        }
+
+        // Now try to decrement the core reference count.
         match self.core.lock() {
             Ok(mut core) => {
                 // Decrement the reference count of the core. We do not actually
@@ -558,6 +685,8 @@ impl<'a, T> Iterator for MultiQueueIterator<'a, T> {
 mod tests {
     use super::*;
     use crate::threadpool::{ThreadJob, ThreadPool};
+    use std::fmt::Debug;
+    use tokio::sync::mpsc::UnboundedReceiver;
 
     #[test]
     fn test_multiqueue() {
@@ -652,6 +781,40 @@ mod tests {
         assert_eq!(queue.front(), Some(&3));
         queue.pop_front();
         assert_eq!(queue.front(), None);
+        queue.push_back(4).unwrap();
+        queue.push_back(5).unwrap();
+        assert_eq!(queue.front(), Some(&4));
+        queue.pop_front();
+        assert_eq!(queue.front(), Some(&5));
+        queue.pop_front();
+        assert_eq!(queue.front(), None);
+    }
+
+    #[test]
+    fn test_pop_all() {
+        let mut queue = MultiQueue::new();
+        queue.push_back(1).unwrap();
+        queue.push_back(2).unwrap();
+        queue.push_back(3).unwrap();
+        queue.pop_all();
+        assert_eq!(queue.front(), None);
+        assert_eq!(queue.size(), 0);
+
+        queue.push_back(4).unwrap();
+        queue.push_back(5).unwrap();
+        queue.push_back(6).unwrap();
+
+        let mut fork = queue.fork().unwrap();
+        assert_eq!(queue.size(), 3);
+        assert_eq!(fork.size(), 3);
+        fork.pop_all();
+        queue.pop_all();
+        assert_eq!(queue.size(), 0);
+        assert_eq!(fork.size(), 0);
+        assert_eq!(queue.front(), None);
+        assert_eq!(fork.front(), None);
+        assert_eq!(queue.shared_size(), 0);
+        assert_eq!(fork.shared_size(), 0);
     }
 
     #[test]
@@ -670,6 +833,68 @@ mod tests {
         assert_eq!(queue.size(), 1);
         queue.pop_front();
         assert_eq!(queue.size(), 0);
+    }
+
+    #[test]
+    fn test_shared_size() {
+        let mut queue = MultiQueue::new();
+        let mut fork = queue.fork().unwrap();
+        assert_eq!(queue.shared_size(), 0);
+        assert_eq!(fork.shared_size(), 0);
+        queue.push_back(1).unwrap();
+        assert_eq!(queue.shared_size(), 1);
+        assert_eq!(fork.shared_size(), 1);
+        queue.push_back(2).unwrap();
+        assert_eq!(queue.shared_size(), 2);
+        assert_eq!(fork.shared_size(), 2);
+        queue.push_back(3).unwrap();
+        assert_eq!(queue.shared_size(), 3);
+        assert_eq!(fork.shared_size(), 3);
+        queue.pop_front();
+        assert_eq!(queue.size(), 2);
+        assert_eq!(fork.size(), 3);
+        assert_eq!(queue.shared_size(), 3);
+        assert_eq!(fork.shared_size(), 3);
+        queue.pop_front();
+        assert_eq!(queue.size(), 1);
+        assert_eq!(fork.size(), 3);
+        assert_eq!(queue.shared_size(), 3);
+        assert_eq!(fork.shared_size(), 3);
+        queue.pop_front();
+        assert_eq!(queue.size(), 0);
+        assert_eq!(fork.size(), 3);
+        assert_eq!(queue.shared_size(), 3);
+        assert_eq!(fork.shared_size(), 3);
+        fork.pop_front();
+        assert_eq!(queue.size(), 0);
+        assert_eq!(fork.size(), 2);
+        assert_eq!(queue.shared_size(), 2);
+        assert_eq!(fork.shared_size(), 2);
+        fork.pop_front();
+        assert_eq!(queue.size(), 0);
+        assert_eq!(fork.size(), 1);
+        assert_eq!(queue.shared_size(), 1);
+        assert_eq!(fork.shared_size(), 1);
+        fork.pop_front();
+        assert_eq!(queue.size(), 0);
+        assert_eq!(fork.size(), 0);
+        assert_eq!(queue.shared_size(), 0);
+        assert_eq!(fork.shared_size(), 0);
+        fork.push_back(10).unwrap();
+        assert_eq!(queue.size(), 1);
+        assert_eq!(fork.size(), 1);
+        assert_eq!(queue.shared_size(), 1);
+        assert_eq!(fork.shared_size(), 1);
+        queue.pop_front();
+        assert_eq!(queue.size(), 0);
+        assert_eq!(fork.size(), 1);
+        assert_eq!(queue.shared_size(), 1);
+        assert_eq!(fork.shared_size(), 1);
+        fork.pop_front();
+        assert_eq!(queue.size(), 0);
+        assert_eq!(fork.size(), 0);
+        assert_eq!(queue.shared_size(), 0);
+        assert_eq!(fork.shared_size(), 0);
     }
 
     #[test]
@@ -1139,5 +1364,81 @@ mod tests {
         }
 
         thread_pool.stop();
+    }
+
+    #[derive(Debug)]
+    struct TestHelper<T: Clone>(pub T, tokio::sync::mpsc::UnboundedSender<T>);
+
+    impl<T: Clone> Drop for TestHelper<T> {
+        fn drop(&mut self) {
+            self.1.send(self.0.clone()).unwrap()
+        }
+    }
+
+    async fn test_receiver(mut receiver: UnboundedReceiver<i32>, bound: i32) {
+        let mut i = 0;
+        loop {
+            match receiver.recv().await {
+                Some(thing) => {
+                    assert_eq!(thing, i);
+                }
+                None => {
+                    break;
+                }
+            }
+            i += 1;
+        }
+
+        assert_eq!(i, bound);
+    }
+
+    #[tokio::test]
+    async fn test_drop() {
+        let bound = 500;
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<i32>();
+        {
+            let mut queue: MultiQueue<TestHelper<i32>> = MultiQueue::new();
+
+            let mut i = 0;
+            while i < bound {
+                queue.push_back(TestHelper(i, sender.clone())).unwrap();
+                i += 1;
+            }
+
+            queue.pop_all();
+        }
+
+        drop(sender);
+
+        test_receiver(receiver, bound).await
+    }
+
+    #[tokio::test]
+    async fn test_drop_with_multiple_queues() {
+        let bound = 500;
+
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<i32>();
+        {
+            let mut queue: MultiQueue<TestHelper<i32>> = MultiQueue::new();
+            let mut fork = queue.fork().unwrap();
+
+            let mut i = 0;
+            while i < (bound / 2) {
+                queue.push_back(TestHelper(i, sender.clone())).unwrap();
+                i += 1;
+            }
+
+            while i < (bound) {
+                fork.push_back(TestHelper(i, sender.clone())).unwrap();
+                i += 1;
+            }
+
+            queue.pop_all();
+            fork.pop_all();
+        }
+
+        drop(sender);
+
+        test_receiver(receiver, bound).await
     }
 }
