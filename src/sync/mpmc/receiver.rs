@@ -84,9 +84,10 @@ impl<T: Clone> Receiver<T> {
 
                         // We have senders, insert the latest waker till we have
                         // messages to read.
-                        channel
-                            .receivers
-                            .insert(self.id.to_string(), cx.waker().clone());
+                        channel.set_waker(self.id.to_string(), cx.waker().clone(), WhichWaker::Receiver);
+
+                        // Just in case, notify the senders that we could read.
+                        channel.wake(WhichWaker::Sender);
                         Poll::Pending
                     }
                     Err(_) => Poll::Ready(Err(())),

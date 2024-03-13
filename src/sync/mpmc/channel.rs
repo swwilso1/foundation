@@ -5,6 +5,7 @@ use crate::sync::error::SendError;
 use std::collections::HashMap;
 use std::task::Waker;
 
+#[derive(Debug, Clone)]
 /// A simple enum that indicates whether to operate on sender wakers or receiver wakers.
 pub(crate) enum WhichWaker {
     Sender,
@@ -14,10 +15,10 @@ pub(crate) enum WhichWaker {
 /// The shared channel object.
 pub(crate) struct Channel<T> {
     /// A map of sender ids to the wakers used to wake the senders.
-    pub senders: HashMap<String, Waker>,
+    senders: HashMap<String, Waker>,
 
     /// A map of receiver ids to the wakers used to wake the receivers.
-    pub receivers: HashMap<String, Waker>,
+    receivers: HashMap<String, Waker>,
 
     /// The original shared message queue.  Receivers have a fork of this
     /// queue.
@@ -48,11 +49,6 @@ impl<T> Channel<T> {
         // or unbounded code.
         match self.queue.push_back(thing) {
             Ok(()) => {
-                // Notify any pending receivers.
-                for (_, waker) in self.receivers.iter() {
-                    waker.wake_by_ref();
-                }
-
                 // Make sure we drain our read side of the queue.  Remember, the receiver contains
                 // a fork of the queue. In order to bound memory usage, we need the receivers to
                 // be the only objects holding references to the queue data.
@@ -122,7 +118,7 @@ impl<T> Channel<T> {
     /// * `which` - An enum indicating whether to use the sender or receiver maps.
     pub fn wake(&mut self, which: WhichWaker) {
         let table = self.which_table(which);
-        for (_, waker) in table {
+        for (_id, waker) in table {
             waker.wake_by_ref();
         }
     }

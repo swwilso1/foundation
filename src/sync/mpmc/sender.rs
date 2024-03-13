@@ -93,6 +93,10 @@ impl<T: Clone> Sender<T> {
                         return Poll::Ready(Ok(()));
                     }
 
+                    // Here we do not have space.  Send a wake notice to any receivers before we return
+                    // pending.
+                    channel.wake(WhichWaker::Receiver);
+
                     channel.set_waker(self.id.to_string(), cx.waker().clone(), WhichWaker::Sender);
                     Poll::Pending
                 } else {
@@ -128,7 +132,7 @@ impl<T: Clone> Sender<T> {
         match self.channel.lock() {
             Ok(mut channel) => {
                 channel.send(thing)?;
-                channel.senders.remove(&self.id.to_string());
+                channel.remove_waker(&self.id.to_string(), WhichWaker::Sender);
                 channel.wake(WhichWaker::Receiver);
             }
             Err(_e) => {
