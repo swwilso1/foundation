@@ -254,30 +254,28 @@ impl ThreadPool {
                         Err(e) => {
                             match e {
                                 TryRecvError::Empty => {
-                                    // There should be a better way to lock the manager and access the contents without
-                                    // using the lock method repeatedly to access the contents.
-                                    let current_workers =
-                                        scheduler_worker_manager.lock().unwrap().current_workers;
-                                    let max_workers =
-                                        scheduler_worker_manager.lock().unwrap().max_workers;
-                                    if current_workers < max_workers {
-                                        let next_worker_id =
-                                            scheduler_worker_manager.lock().unwrap().next_worker_id;
-                                        let worker =
-                                            Worker::new(next_worker_id, idle_sender.clone());
-                                        scheduler_worker_manager
-                                            .lock()
-                                            .unwrap()
-                                            .workers
-                                            .insert(next_worker_id, worker);
-                                        scheduler_worker_manager.lock().unwrap().next_worker_id +=
-                                            1;
-                                        scheduler_worker_manager.lock().unwrap().current_workers +=
-                                            1;
+                                    if let Ok(mut scheduler_worker_manager) =
+                                        scheduler_worker_manager.lock()
+                                    {
+                                        if scheduler_worker_manager.current_workers
+                                            < scheduler_worker_manager.max_workers
+                                        {
+                                            let next_worker_id =
+                                                scheduler_worker_manager.next_worker_id;
+                                            let worker =
+                                                Worker::new(next_worker_id, idle_sender.clone());
+                                            scheduler_worker_manager
+                                                .workers
+                                                .insert(next_worker_id, worker);
+                                            scheduler_worker_manager.next_worker_id += 1;
+                                            scheduler_worker_manager.current_workers += 1;
+                                        }
                                     }
 
                                     // We may have added a worker to the pool, so now we just wait till we get an
-                                    // idle worker.
+                                    // idle worker. The crucial bit here is that we now block waiting for the next
+                                    // idle worker to be available. We block here to avoid spinning on try_recv() in
+                                    // the main part of the loop.
                                     let idle_worker = idle_receiver.recv().await;
                                     if let Some(idle_worker) = idle_worker {
                                         // Get the worker object, so we can add the job to the worker thread
