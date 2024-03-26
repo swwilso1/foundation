@@ -1,0 +1,35 @@
+
+WHITESPACE = _{ " " | "\t" }
+COMMENT = _{ "#" ~ (!"\n" ~ ANY)* }
+
+text = { (ASCII_ALPHANUMERIC | ":" | "/" | "." | "_")+ }
+
+extended_dns_server_option = { dns_server_option ~ "," ~ "domain_name" ~ "," ~ "domain_search" }
+domain_name_dns_server_option = { dns_server_option ~ "," ~ "domain_name" }
+dns_server_option = { "option" ~ "domain_name_servers" }
+classless_static_route_option = { "option" ~ "classless_static_routes" }
+interface_mtu_option = { "option" ~ "interface_mtu" }
+host_name_option = { "option" ~ "host_name" }
+ntp_servers_option = { "option" ~ "ntp_servers" }
+rapid_commit_option = { "option" ~ "rapid_commit" }
+
+dhcp_server_identifier_require = { "require" ~ "dhcp_server_identifier" }
+slaac_hwaddr = { "slaac" ~ "hwaddr" }
+slaac_private = { "slaac" ~ "private" }
+
+hostname = { "hostname" }
+clientid = { "clientid" }
+duid = { "duid" }
+persistent = { "persistent" }
+vendorclassid = { "vendorclassid" }
+
+address_list = { text ~ (" " ~ text)* }
+
+interface = { "interface" ~ text }
+static_ip_address = { "static" ~ ("ip_address" | "ip6_address") ~ text }
+static_routers = { "static" ~ "routers" ~ address_list }
+static_domain_name_servers = { "static" ~ "domain_name_servers" ~ address_list }
+
+declaration = { extended_dns_server_option | domain_name_dns_server_option | dns_server_option | classless_static_route_option | interface_mtu_option | host_name_option | ntp_servers_option | rapid_commit_option | dhcp_server_identifier_require | slaac_hwaddr | slaac_private | hostname | clientid | duid | persistent | vendorclassid | interface | static_ip_address | static_routers | static_domain_name_servers }
+line = { declaration* ~ NEWLINE }
+file = { SOI ~ (line)* ~ EOI }

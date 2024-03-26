@@ -31,6 +31,15 @@ pub enum FoundationError {
 
     #[error("MultiQueue error: {0}")]
     MultiQueueError(String),
+
+    #[error("Serde YAML error: {0}")]
+    SerdeYamlError(serde_yaml::Error),
+
+    #[error("Address Parse error: {0}")]
+    AddressParseError(std::net::AddrParseError),
+
+    #[error("Parse integer error: {0}")]
+    ParseIntError(std::num::ParseIntError),
 }
 
 impl From<std::io::Error> for FoundationError {
@@ -48,5 +57,23 @@ impl From<Box<dyn std::error::Error + Send + Sync + 'static>> for FoundationErro
 impl<T> From<MultiQueueError<T>> for FoundationError {
     fn from(error: MultiQueueError<T>) -> Self {
         FoundationError::MultiQueueError(error.to_string())
+    }
+}
+
+impl From<serde_yaml::Error> for FoundationError {
+    fn from(error: serde_yaml::Error) -> Self {
+        FoundationError::SerdeYamlError(error)
+    }
+}
+
+impl From<std::net::AddrParseError> for FoundationError {
+    fn from(error: std::net::AddrParseError) -> Self {
+        FoundationError::AddressParseError(error)
+    }
+}
+
+impl From<std::num::ParseIntError> for FoundationError {
+    fn from(error: std::num::ParseIntError) -> Self {
+        FoundationError::ParseIntError(error)
     }
 }

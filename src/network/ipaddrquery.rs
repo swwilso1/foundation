@@ -1,6 +1,12 @@
-use std::net::{Ipv4Addr, Ipv6Addr};
+//! The `ipaddrquery` module provides the `IpAddrQuery` trait that adds functionality to `IpAddr`,
+//! `Ipv4Addr`, and `Ipv6Addr` from the `std::net` module.
 
-// A trait designed to add functionality to Ipv4Addr and Ipv6Addr from the std::net module.
+use crate::error::FoundationError;
+use crate::network::netmask::bits_in_mask;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::str::FromStr;
+
+// A trait designed to add functionality to IpAddr, Ipv4Addr, and Ipv6Addr from the std::net module.
 pub trait IpAddrQuery {
     /// The integer type capable of holding every value of the IP address.
     type Integer;
@@ -25,6 +31,12 @@ pub trait IpAddrQuery {
     ///
     /// The integer representation of the IP address.
     fn to_integer(&self) -> Self::Integer;
+
+    fn from(s: &str) -> Result<Self, FoundationError>
+    where
+        Self: Sized;
+
+    fn bits_in_mask(&self) -> u8;
 }
 
 impl IpAddrQuery for Ipv4Addr {
@@ -97,6 +109,20 @@ impl IpAddrQuery for Ipv4Addr {
 
     fn to_integer(&self) -> Self::Integer {
         u32::from_be_bytes(self.octets())
+    }
+
+    fn from(s: &str) -> Result<Self, FoundationError>
+    where
+        Self: Sized,
+    {
+        match Ipv4Addr::from_str(s) {
+            Ok(ip) => Ok(ip),
+            Err(e) => Err(FoundationError::AddressParseError(e)),
+        }
+    }
+
+    fn bits_in_mask(&self) -> u8 {
+        bits_in_mask(&self.octets())
     }
 }
 
@@ -180,11 +206,90 @@ impl IpAddrQuery for Ipv6Addr {
         let bytes = self.octets();
         u128::from_be_bytes(bytes)
     }
+
+    fn from(s: &str) -> Result<Self, FoundationError>
+    where
+        Self: Sized,
+    {
+        match Ipv6Addr::from_str(s) {
+            Ok(ip) => Ok(ip),
+            Err(e) => Err(FoundationError::AddressParseError(e)),
+        }
+    }
+
+    fn bits_in_mask(&self) -> u8 {
+        bits_in_mask(&self.octets())
+    }
+}
+
+impl IpAddrQuery for IpAddr {
+    type Integer = u128;
+
+    fn is_global_address(&self) -> bool {
+        match self {
+            IpAddr::V4(ip) => ip.is_global_address(),
+            IpAddr::V6(ip) => ip.is_global_address(),
+        }
+    }
+
+    fn from_integer(ip: Self::Integer) -> Self {
+        if ip <= u32::MAX as u128 {
+            IpAddr::V4(Ipv4Addr::from_integer(ip as u32))
+        } else {
+            IpAddr::V6(Ipv6Addr::from_integer(ip))
+        }
+    }
+
+    fn to_integer(&self) -> Self::Integer {
+        match self {
+            IpAddr::V4(ip) => ip.to_integer() as u128,
+            IpAddr::V6(ip) => ip.to_integer(),
+        }
+    }
+
+    fn from(s: &str) -> Result<Self, FoundationError>
+    where
+        Self: Sized,
+    {
+        if let Ok(ipv4) = Ipv4Addr::from_str(s) {
+            return Ok(IpAddr::V4(ipv4));
+        } else if let Ok(ipv6) = Ipv6Addr::from_str(s) {
+            return Ok(IpAddr::V6(ipv6));
+        }
+        Err(FoundationError::OperationFailed(
+            "Failed to convert {} to either an IPv4 or IPv6 address".to_string(),
+        ))
+    }
+
+    fn bits_in_mask(&self) -> u8 {
+        match self {
+            IpAddr::V4(ip) => ip.bits_in_mask(),
+            IpAddr::V6(ip) => ip.bits_in_mask(),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::network::netmask::{netmask_from_bits_ipv4, netmask_from_bits_ipv6};
+
+    #[test]
+    fn test_bits_in_mask() {
+        for i in 1..33u8 {
+            assert_eq!(
+                <Ipv4Addr as From<[u8; 4]>>::from(netmask_from_bits_ipv4(i)).bits_in_mask(),
+                i
+            );
+        }
+
+        for i in 1..129u8 {
+            assert_eq!(
+                <Ipv6Addr as From<[u8; 16]>>::from(netmask_from_bits_ipv6(i)).bits_in_mask(),
+                i
+            );
+        }
+    }
 
     #[test]
     fn test_ipv4_is_global_address() {

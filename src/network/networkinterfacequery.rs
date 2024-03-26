@@ -1,5 +1,11 @@
+//! The `networkinterfacequery` module provides a trait for querying network interfaces from the
+//! `network_interface` crate.  The `network_interface` crate provides functionality for inspecting
+//! network interfaces on a system. This module leverages that functionality and provides the
+//! `NetworkInterfaceQuery` trait for querying data from a `network_interface::NetworkInterface`
+//! object.
+
 use crate::network::wireless::is_wireless_interface;
-use crate::network::IpAddrQuery;
+use crate::network::ipaddrquery::IpAddrQuery;
 
 use network_interface::{Addr, NetworkInterface};
 
@@ -15,7 +21,7 @@ pub trait NetworkInterfaceQuery {
     fn has_ipv4_address(&self) -> bool;
     fn has_ipv6_address(&self) -> bool;
     fn is_loopback_interface(&self) -> bool;
-    fn is_wireless_interface(&self) -> bool;
+    fn is_wireless_interface(&self) -> impl std::future::Future<Output = bool> + Send;
 }
 
 impl NetworkInterfaceQuery for NetworkInterface {
@@ -179,7 +185,7 @@ impl NetworkInterfaceQuery for NetworkInterface {
         false
     }
 
-    fn is_wireless_interface(&self) -> bool {
-        return is_wireless_interface(&self.name);
+    fn is_wireless_interface(&self) -> impl std::future::Future<Output = bool> + Send {
+        is_wireless_interface(&self.name)
     }
 }
