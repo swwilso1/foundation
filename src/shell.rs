@@ -39,4 +39,20 @@ impl Shell {
             Err(e) => Err(FoundationError::from(e)),
         }
     }
+
+    /// Executes a command with the given arguments and returns the stdout and stderr output.
+    pub fn execute(command: &str, arguments: Vec<String>) -> (Option<String>, Option<String>) {
+        if let Ok(output) = Shell::execute_command(command, arguments) {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                (Some(stdout), Some(stderr))
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                (None, Some(stderr))
+            }
+        } else {
+            (None, None)
+        }
+    }
 }
