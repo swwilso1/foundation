@@ -1223,9 +1223,13 @@ mod tests {
         assert_eq!(interface.has_ipv6_address(), true);
     }
 
-    #[tokio::test]
-    async fn test_is_wireless_interface() {
-        let interface = NetworkInterface::new_with_name("eth0");
-        assert_eq!(interface.is_wireless_interface().await, false);
+    cfg_if! {
+        if #[cfg(target_os = "linux")] {
+            #[tokio::test]
+            async fn test_is_wireless_interface() {
+                let interface = NetworkInterface::new_with_name("eth0");
+                assert_eq!(interface.is_wireless_interface().await, false);
+            }
+        }
     }
 }

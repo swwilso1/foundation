@@ -1,7 +1,6 @@
 //! The `platformid` module contains code that provides information about the platform on which the
 //! application is running.
 
-use std::path::PathBuf;
 use versions::SemVer;
 
 /// The `ProcessorArchitecture` enum represents the processor architecture of the platform.
@@ -17,6 +16,7 @@ cfg_if! {
     if #[cfg(target_os = "linux")] {
         use crate::shell::Shell;
         use std::env;
+        use std::path::PathBuf;
 
         /// Find the path to the requested binary using the PATH environment variable.
         ///

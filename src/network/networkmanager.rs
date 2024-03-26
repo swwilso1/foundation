@@ -1,20 +1,21 @@
 //! The `networkmanager` module provides the `NetworkManager` type, which is responsible for
 //! managing network configurations and services on a machine.
 
-use crate::network::dhcpcdservice::DHCPCDService;
-use crate::network::dnsmasqservice::DNSMasqService;
-use crate::network::hostapdservice::HostAPDService;
-use crate::network::netplanservice::NetplanService;
 use crate::network::networkconfiguration::NetworkConfiguration;
 use crate::network::networkinterface::NetworkInterface;
-use crate::network::networkservice::NetworkService;
-use crate::platformid::{PlatformId, ProcessorArchitecture};
-use crate::shell::Shell;
-use log::error;
 use std::collections::HashMap;
 
 cfg_if! {
     if #[cfg(target_os = "linux")] {
+        use crate::network::dhcpcdservice::DHCPCDService;
+        use crate::network::dnsmasqservice::DNSMasqService;
+        use crate::network::hostapdservice::HostAPDService;
+        use crate::network::netplanservice::NetplanService;
+        use crate::network::networkservice::NetworkService;
+        use crate::platformid::{PlatformId, ProcessorArchitecture};
+        use crate::shell::Shell;
+        use log::error;
+
         const NETPLAN_DIR: &str = "/etc/netplan";
         const NETPLAN_CONF: &str = "/etc/netplan/99-network-manager-config.yaml";
         const NETPLAN_COMMAND: &str = "/usr/sbin/netplan";
@@ -174,10 +175,9 @@ impl NetworkManager {
                 .insert(interface.name.clone(), configuration);
         }
 
-        let platform_id = PlatformId::new();
-
         cfg_if! {
             if #[cfg(target_os = "linux")] {
+                let platform_id = PlatformId::new();
                 if platform_id.vendor == "Ubuntu" &&
                     platform_id.processor_architecture == ProcessorArchitecture::X86_64 {
                     // We are running on Ubuntu 64-bit, assume we have access to the Netplan service.
