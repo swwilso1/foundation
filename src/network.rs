@@ -1,15 +1,15 @@
-pub use dhcprange::DHCPRange as DHCPRange;
-pub use interfaceaddr::InterfaceAddr as InterfaceAddr;
+pub use dhcprange::DHCPRange;
+pub use interfaceaddr::InterfaceAddr;
 pub use ipaddrquery::IpAddrQuery as IPAddrQuery;
-pub use networkconfiguration::NetworkConfiguration as NetworkConfiguration;
-pub use networkconfiguration::AddressMode as AddressMode;
-pub use networkinterface::NetworkInterface as NetworkInterface;
-pub use networkinterfaces::NetworkInterfaces as NetworkInterfaces;
-pub use networkmanager::NetworkManager as NetworkManager;
-pub use networkservice::NetworkService as NetworkService;
-pub use wireless::configuration::WirelessConfiguration as WirelessConfiguration;
-pub use wireless::configuration::WirelessStandard as WirelessStandard;
-pub use wireless::configuration::WirelessMode as WirelessMode;
+pub use networkconfiguration::AddressMode;
+pub use networkconfiguration::NetworkConfiguration;
+pub use networkinterface::NetworkInterface;
+pub use networkinterfaces::NetworkInterfaces;
+pub use networkmanager::NetworkManager;
+pub use networkservice::NetworkService;
+pub use wireless::configuration::WirelessConfiguration;
+pub use wireless::configuration::WirelessMode;
+pub use wireless::configuration::WirelessStandard;
 
 pub mod dhcprange;
 pub mod interfaceaddr;

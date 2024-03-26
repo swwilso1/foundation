@@ -2,8 +2,8 @@
 //! broadcast address and netmask for a network interface.
 
 use crate::error::FoundationError;
-use crate::network::netmask::{netmask_from_bits_ipv4, netmask_from_bits_ipv6};
 use crate::network::ipaddrquery::IpAddrQuery;
+use crate::network::netmask::{netmask_from_bits_ipv4, netmask_from_bits_ipv6};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 /// The `InterfaceAddr` struct represents an IP address, broadcast address, and netmask for a

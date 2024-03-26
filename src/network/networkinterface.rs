@@ -1,8 +1,8 @@
 //! The `networkinterface` module provides the `NetworkInterface` struct and its methods.
 
 use crate::network::interfaceaddr::InterfaceAddr;
-use crate::network::wireless::is_wireless_interface;
 use crate::network::ipaddrquery::IpAddrQuery;
+use crate::network::wireless::is_wireless_interface;
 use network_interface::NetworkInterfaceConfig;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 

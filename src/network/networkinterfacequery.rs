@@ -4,8 +4,8 @@
 //! `NetworkInterfaceQuery` trait for querying data from a `network_interface::NetworkInterface`
 //! object.
 
-use crate::network::wireless::is_wireless_interface;
 use crate::network::ipaddrquery::IpAddrQuery;
+use crate::network::wireless::is_wireless_interface;
 
 use network_interface::{Addr, NetworkInterface};
 

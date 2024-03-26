@@ -3,15 +3,15 @@
 
 use crate::network::dhcpcdservice::DHCPCDService;
 use crate::network::dnsmasqservice::DNSMasqService;
+use crate::network::hostapdservice::HostAPDService;
 use crate::network::netplanservice::NetplanService;
 use crate::network::networkconfiguration::NetworkConfiguration;
 use crate::network::networkinterface::NetworkInterface;
 use crate::network::networkservice::NetworkService;
 use crate::platformid::{PlatformId, ProcessorArchitecture};
+use crate::shell::Shell;
 use log::error;
 use std::collections::HashMap;
-use crate::network::hostapdservice::HostAPDService;
-use crate::shell::Shell;
 
 cfg_if! {
     if #[cfg(target_os = "linux")] {
