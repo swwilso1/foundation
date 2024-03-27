@@ -40,6 +40,12 @@ pub enum FoundationError {
 
     #[error("Parse integer error: {0}")]
     ParseIntError(std::num::ParseIntError),
+
+    #[error("Unknown Wireless Standard: {0}")]
+    UnknownWirelessStandard(String),
+
+    #[error("Unknown Wireless Mode: {0}")]
+    UnknownWirelessMode(String),
 }
 
 impl From<std::io::Error> for FoundationError {

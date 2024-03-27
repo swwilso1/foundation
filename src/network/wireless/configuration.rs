@@ -1,5 +1,9 @@
 //! The `configuration` module contains the `WirelessConfiguration` struct and its associated enums.
 
+use crate::error::FoundationError;
+use std::fmt::Display;
+use std::str::FromStr;
+
 /// The `WirelessStandard` enum represents the wireless standards used by a wireless network.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum WirelessStandard {
@@ -110,6 +114,52 @@ impl WirelessConfiguration {
             wpa_key_mgmt,
             wpa_pairwise,
             rsn_pairwise,
+        }
+    }
+}
+
+impl Display for WirelessStandard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WirelessStandard::A => write!(f, "A"),
+            WirelessStandard::B => write!(f, "B"),
+            WirelessStandard::G => write!(f, "G"),
+            WirelessStandard::N => write!(f, "N"),
+        }
+    }
+}
+
+impl FromStr for WirelessStandard {
+    type Err = FoundationError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "A" => Ok(WirelessStandard::A),
+            "B" => Ok(WirelessStandard::B),
+            "G" => Ok(WirelessStandard::G),
+            "N" => Ok(WirelessStandard::N),
+            _ => Err(FoundationError::UnknownWirelessStandard(s.to_string())),
+        }
+    }
+}
+
+impl Display for WirelessMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WirelessMode::Client => write!(f, "client"),
+            WirelessMode::AccessPoint => write!(f, "access_point"),
+        }
+    }
+}
+
+impl FromStr for WirelessMode {
+    type Err = FoundationError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "client" => Ok(WirelessMode::Client),
+            "access_point" => Ok(WirelessMode::AccessPoint),
+            _ => Err(FoundationError::UnknownWirelessMode(s.to_string())),
         }
     }
 }
