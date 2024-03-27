@@ -26,6 +26,7 @@ cfg_if! {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
 /// The `NetworkManager` struct is responsible for managing network configurations and services
 /// on a machine.
 pub struct NetworkManager {
