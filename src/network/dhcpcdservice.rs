@@ -218,7 +218,7 @@ impl NetworkService for DHCPCDService {
                             let interface_name = text.as_str();
                             let interface = NetworkInterface::new_with_name(interface_name);
                             let config = NetworkConfiguration::new(
-                                AddressMode::DHCP4,
+                                AddressMode::DHCP,
                                 interface,
                                 true,
                                 None,
@@ -411,10 +411,7 @@ impl NetworkService for DHCPCDService {
                             &config.interface.nameserver_addresses,
                         )?;
                         writeln!(f, "")?;
-                    } else if config.enabled
-                        && (config.address_mode == AddressMode::DHCP4
-                            || config.address_mode == AddressMode::DHCP6)
-                    {
+                    } else if config.enabled && config.address_mode == AddressMode::DHCP {
                         writeln!(f, "interface {}", config.interface.name)?;
                     }
                     Ok(())
@@ -499,7 +496,7 @@ mod tests {
         config_map.insert("eth0".to_string(), config);
 
         let interface2 = NetworkInterface::new_with_name("eth1");
-        let config = NetworkConfiguration::new(AddressMode::DHCP4, interface2, true, None, None);
+        let config = NetworkConfiguration::new(AddressMode::DHCP, interface2, true, None, None);
         config_map.insert("eth1".to_string(), config);
 
         let mut dhcpcd_service = DHCPCDService::new(PathBuf::from("/tmp/dhcpcd2.conf"));

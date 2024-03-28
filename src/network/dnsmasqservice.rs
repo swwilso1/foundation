@@ -122,7 +122,7 @@ mod tests {
         let interface = NetworkInterface::new_with_name("eth0");
         let wifi_config = WirelessConfiguration::default();
         let config = NetworkConfiguration::new(
-            AddressMode::DHCP4,
+            AddressMode::DHCP,
             interface,
             true,
             Some(wifi_config),

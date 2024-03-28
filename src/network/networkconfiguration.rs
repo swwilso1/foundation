@@ -15,11 +15,8 @@ use std::str::FromStr;
 /// DHCP6, or Static.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum AddressMode {
-    /// The interface receives an IPv4 address from a DHCP server.
-    DHCP4,
-
-    /// The interface receives an IPv6 address from a DHCP server.
-    DHCP6,
+    /// The interface receives an IP address from a DHCP server.
+    DHCP,
 
     /// The interface has a static IP address.
     Static,
@@ -84,7 +81,7 @@ impl NetworkConfiguration {
     /// The wireless configuration and DHCP range are not set.
     pub fn new_with_name(name: &str) -> Self {
         NetworkConfiguration::new(
-            AddressMode::DHCP4,
+            AddressMode::DHCP,
             NetworkInterface::new_with_name(name),
             false,
             None,
@@ -104,7 +101,7 @@ impl NetworkConfiguration {
     /// to DHCP4, the network interface is created with the specified details, and the network
     /// interface is enabled. The wireless configuration and DHCP range are not set.
     pub fn new_with_interface(interface: NetworkInterface) -> Self {
-        NetworkConfiguration::new(AddressMode::DHCP4, interface, true, None, None)
+        NetworkConfiguration::new(AddressMode::DHCP, interface, true, None, None)
     }
 
     /// Return the name of the network interface.
@@ -123,8 +120,7 @@ impl FromStr for AddressMode {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "dhcp4" => Ok(AddressMode::DHCP4),
-            "dhcp6" => Ok(AddressMode::DHCP6),
+            "dhcp" => Ok(AddressMode::DHCP),
             "static" => Ok(AddressMode::Static),
             _ => Err(FoundationError::InvalidConversion(
                 s.to_string(),
@@ -137,8 +133,7 @@ impl FromStr for AddressMode {
 impl Display for AddressMode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            AddressMode::DHCP4 => write!(f, "dhcp4"),
-            AddressMode::DHCP6 => write!(f, "dhcp6"),
+            AddressMode::DHCP => write!(f, "dhcp"),
             AddressMode::Static => write!(f, "static"),
         }
     }

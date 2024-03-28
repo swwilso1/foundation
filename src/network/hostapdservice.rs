@@ -213,7 +213,7 @@ mod tests {
         wifi_config.wpa_pairwise = Some("BUBBA".to_string());
         wifi_config.rsn_pairwise = Some("FLUBBA".to_string());
         let config =
-            NetworkConfiguration::new(AddressMode::DHCP4, interface, true, Some(wifi_config), None);
+            NetworkConfiguration::new(AddressMode::DHCP, interface, true, Some(wifi_config), None);
         let mut config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
         config_map.insert("wlan0".to_string(), config);
 
@@ -228,7 +228,7 @@ mod tests {
         let mut other_config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
         let other_interface = NetworkInterface::new_with_name("wlan0");
         let other_config =
-            NetworkConfiguration::new(AddressMode::DHCP4, other_interface, true, None, None);
+            NetworkConfiguration::new(AddressMode::DHCP, other_interface, true, None, None);
         other_config_map.insert("wlan0".to_string(), other_config);
         let result = hostapd_service.load_configuration(&mut other_config_map);
         assert!(result.is_ok());

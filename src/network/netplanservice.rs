@@ -106,7 +106,7 @@ impl NetworkService for NetplanService {
 
                                         let inner_key = inner_name.as_str().unwrap();
 
-                                        if inner_key == "dhcp4" || inner_key == "dhcp6" {
+                                        if inner_key == "dhcp" {
                                             if !inner_value.as_str().is_some() {
                                                 debug!("The {} mapping contains a 'dhcp4' key with a value that is not a string", interface_name);
                                                 continue;
@@ -115,13 +115,9 @@ impl NetworkService for NetplanService {
                                             let dhcp_value = inner_value.as_str().unwrap();
                                             if dhcp_value == "true" {
                                                 match inner_key {
-                                                    "dhcp4" => {
+                                                    "dhcp4" | "dhcp6" => {
                                                         configuration.address_mode =
-                                                            AddressMode::DHCP4
-                                                    }
-                                                    "dhcp6" => {
-                                                        configuration.address_mode =
-                                                            AddressMode::DHCP6
+                                                            AddressMode::DHCP
                                                     }
                                                     _ => {}
                                                 }
@@ -219,13 +215,9 @@ impl NetworkService for NetplanService {
                                             if let Some(bool_value) = inner_value.as_str() {
                                                 if bool_value == "true" {
                                                     match inner_key {
-                                                        "dhcp4" => {
+                                                        "dhcp4" | "dhcp6" => {
                                                             configuration.address_mode =
-                                                                AddressMode::DHCP4
-                                                        }
-                                                        "dhcp6" => {
-                                                            configuration.address_mode =
-                                                                AddressMode::DHCP6
+                                                                AddressMode::DHCP
                                                         }
                                                         _ => {}
                                                     }
@@ -348,9 +340,7 @@ impl NetworkService for NetplanService {
                         if should_use_config_for_ethernets(config) {
                             ethernets_map.serialize_key(&config.interface.name)?;
                             let mut inner_map = ethernets_map.serialize_map(None)?;
-                            if config.address_mode == AddressMode::DHCP4
-                                || config.address_mode == AddressMode::DHCP6
-                            {
+                            if config.address_mode == AddressMode::DHCP {
                                 inner_map.serialize_entry(
                                     "dhcp4",
                                     &format!("{}", config.address_mode),
@@ -405,9 +395,7 @@ impl NetworkService for NetplanService {
                         wifis_map.serialize_key(&config.interface.name)?;
                         let mut individual_wifi_map = wifis_map.serialize_map(None)?;
                         individual_wifi_map.serialize_entry("optional", &true)?;
-                        if config.address_mode == AddressMode::DHCP4
-                            || config.address_mode == AddressMode::DHCP6
-                        {
+                        if config.address_mode == AddressMode::DHCP {
                             individual_wifi_map
                                 .serialize_entry(&format!("{}", config.address_mode), &true)?;
                         }
@@ -489,7 +477,7 @@ mod tests {
 
         let eth1_interface = NetworkInterface::new_with_name("eth1");
         let config2 =
-            NetworkConfiguration::new(AddressMode::DHCP4, eth1_interface, true, None, None);
+            NetworkConfiguration::new(AddressMode::DHCP, eth1_interface, true, None, None);
         config_map.insert("eth1".to_string(), config2);
 
         let mut netplan_service = NetplanService::new(PathBuf::from("/tmp/netplan.yaml"));
@@ -539,7 +527,7 @@ mod tests {
         wifi_config2.password = Some("RhyBreadWithCrust".to_string());
         wifi_config2.mode = WirelessMode::Client;
         let config2 = NetworkConfiguration::new(
-            AddressMode::DHCP4,
+            AddressMode::DHCP,
             interface2,
             true,
             Some(wifi_config2),
