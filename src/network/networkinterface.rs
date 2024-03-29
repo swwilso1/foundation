@@ -29,6 +29,31 @@ pub struct NetworkInterface {
 }
 
 impl NetworkInterface {
+    /// Create a default version of a `NetworkInterface`.
+    /// All internals have a default value.
+    pub fn default() -> NetworkInterface {
+        NetworkInterface {
+            name: String::new(),
+            addresses: vec![],
+            mac_addr: None,
+            index: 0,
+            nameserver_addresses: vec![],
+            gateway_addresses: vec![],
+        }
+    }
+
+    /// Create a new network interface
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the network interface.
+    /// * `addresses` - A list of `InterfaceAddr` objects configured for the interface.
+    /// * `mac_addr` - The MAC address of the interface or None.
+    /// * `index` - The operating systems index for the interface.
+    /// * `nameserver_addresses` - A list of IP address representing DNS nameservers
+    ///    for the address.
+    /// * `gateway_addresses` - A list of IP addresses representing gateways/routers
+    ///   for the address.
     pub fn new(
         name: &str,
         addresses: Vec<InterfaceAddr>,
