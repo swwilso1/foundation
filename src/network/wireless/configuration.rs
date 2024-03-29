@@ -116,6 +116,11 @@ impl WirelessConfiguration {
             rsn_pairwise,
         }
     }
+
+    /// Clear the current settings from the configuration and restore to default values.
+    pub fn clear(&mut self) {
+        *self = WirelessConfiguration::default();
+    }
 }
 
 impl Display for WirelessStandard {
