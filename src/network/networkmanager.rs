@@ -79,6 +79,20 @@ impl NetworkManager {
         self.configurations.get(name)
     }
 
+    /// Get a mutable network configuration by name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the network configuration to get.
+    ///
+    /// # Returns
+    ///
+    /// A reference to the mutable network configuration with the specified name, or `None` if no such
+    /// configuration exists.
+    pub fn get_configuration_mut(&mut self, name: &str) -> Option<&mut NetworkConfiguration> {
+        self.configurations.get_mut(name)
+    }
+
     /// Remove a network configuration by name.
     ///
     /// # Arguments
