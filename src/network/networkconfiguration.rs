@@ -42,6 +42,17 @@ pub struct NetworkConfiguration {
 }
 
 impl NetworkConfiguration {
+    /// Create a default `NetworkConfiguration`.
+    pub fn default() -> NetworkConfiguration {
+        NetworkConfiguration {
+            address_mode: AddressMode::DHCP,
+            interface: NetworkInterface::default(),
+            enabled: false,
+            wifi_configuration: None,
+            dhcp_range: None,
+        }
+    }
+
     /// Creates a new `NetworkConfiguration` with the specified address mode, network interface,
     /// enabled status, wireless configuration, and DHCP range.
     ///
@@ -102,6 +113,11 @@ impl NetworkConfiguration {
     /// interface is enabled. The wireless configuration and DHCP range are not set.
     pub fn new_with_interface(interface: NetworkInterface) -> Self {
         NetworkConfiguration::new(AddressMode::DHCP, interface, true, None, None)
+    }
+
+    /// Clear the current settings of the network interface to default settings
+    pub fn clear(&mut self) {
+        *self = NetworkConfiguration::default();
     }
 
     /// Return the name of the network interface.
