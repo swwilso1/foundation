@@ -10,6 +10,7 @@ pub mod constants;
 pub mod defer;
 pub mod error;
 pub mod filesystem;
+pub mod filesystem_monitor;
 pub mod keyvalueconfigfile;
 pub mod multiqueue;
 pub mod network;

@@ -1,5 +1,6 @@
 use crate::multiqueue::MultiQueueError;
 
+use notify::Error as NotifyError;
 use std::error::Error;
 use thiserror::Error;
 
@@ -46,6 +47,9 @@ pub enum FoundationError {
 
     #[error("Unknown Wireless Mode: {0}")]
     UnknownWirelessMode(String),
+
+    #[error("Notify error: {0}")]
+    NotifyError(NotifyError),
 }
 
 impl From<std::io::Error> for FoundationError {
@@ -81,5 +85,11 @@ impl From<std::net::AddrParseError> for FoundationError {
 impl From<std::num::ParseIntError> for FoundationError {
     fn from(error: std::num::ParseIntError) -> Self {
         FoundationError::ParseIntError(error)
+    }
+}
+
+impl From<NotifyError> for FoundationError {
+    fn from(error: NotifyError) -> Self {
+        FoundationError::NotifyError(error)
     }
 }
