@@ -180,4 +180,47 @@ mod tests {
             assert!(false);
         };
     }
+
+    #[tokio::test]
+    async fn test_progress_meter_with_channels() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<i32>();
+        let mut progress_meter = ProgressMeter::new(100,
+            Box::pin(move |percent| {
+                tx.send(percent).unwrap();
+            })
+        );
+        progress_meter.increment();
+        progress_meter.notify(ProgressMeterNotification::Auto);
+        assert_eq!(rx.recv().await.unwrap(), 1);
+        progress_meter.increment_by(10);
+        progress_meter.notify(ProgressMeterNotification::Auto);
+        assert_eq!(rx.recv().await.unwrap(), 11);
+        progress_meter.increment_by(10);
+        progress_meter.notify(ProgressMeterNotification::Auto);
+        assert_eq!(rx.recv().await.unwrap(), 21);
+        progress_meter.increment_by(10);
+        progress_meter.notify(ProgressMeterNotification::Auto);
+        assert_eq!(rx.recv().await.unwrap(), 31);
+        progress_meter.increment_by(10);
+        progress_meter.notify(ProgressMeterNotification::Auto);
+        assert_eq!(rx.recv().await.unwrap(), 41);
+        progress_meter.increment_by(10);
+        progress_meter.notify(ProgressMeterNotification::Auto);
+        assert_eq!(rx.recv().await.unwrap(), 51);
+        progress_meter.increment_by(10);
+        progress_meter.notify(ProgressMeterNotification::Auto);
+        assert_eq!(rx.recv().await.unwrap(), 61);
+        progress_meter.increment_by(10);
+        progress_meter.notify(ProgressMeterNotification::Auto);
+        assert_eq!(rx.recv().await.unwrap(), 71);
+        progress_meter.increment_by(10);
+        progress_meter.notify(ProgressMeterNotification::Auto);
+        assert_eq!(rx.recv().await.unwrap(), 81);
+        progress_meter.increment_by(10);
+        progress_meter.notify(ProgressMeterNotification::Auto);
+        assert_eq!(rx.recv().await.unwrap(), 91);
+        progress_meter.increment_by(10);
+        progress_meter.notify(ProgressMeterNotification::Auto);
+        assert_eq!(rx.recv().await.unwrap(), 100);
+    }
 }
