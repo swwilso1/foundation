@@ -83,6 +83,15 @@ impl<K: Clone + Hash + PartialEq + Eq, T: Send + Sync + 'static> DelayedHandler<
     pub fn contains_handler_for_key(&self, key: &K) -> bool {
         self.handlers.contains_key(key)
     }
+
+    /// Remove the handler associated with the given key from the `DelayedHandler` instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The key to remove from the `DelayedHandler` instance.
+    pub fn remove_handler(&mut self, key: &K) {
+        self.handlers.remove(key);
+    }
 }
 
 #[cfg(test)]
