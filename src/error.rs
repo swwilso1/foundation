@@ -6,6 +6,9 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum FoundationError {
+    #[error("Handler not found")]
+    HandlerNotFound,
+
     #[error("Could not convert {0} to {1}")]
     InvalidConversion(String, &'static str),
 

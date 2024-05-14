@@ -41,7 +41,7 @@ impl ThreadJob {
 }
 
 // The `WorkerId` type is a unique identifier for a worker in the thread pool.
-type WorkerId = u16;
+pub type WorkerId = u16;
 
 // The `Worker` type is a single worker in the thread pool. It is responsible for executing tasks
 // in a `ThreadJob`.

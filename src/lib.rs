@@ -8,6 +8,7 @@ extern crate num_cpus;
 
 pub mod constants;
 pub mod defer;
+pub mod delayed_handler;
 pub mod error;
 pub mod filesystem;
 pub mod filesystem_monitor;
