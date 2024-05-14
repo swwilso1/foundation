@@ -70,6 +70,19 @@ impl<K: Clone + Hash + PartialEq + Eq, T: Send + Sync + 'static> DelayedHandler<
             Err(FoundationError::HandlerNotFound)
         }
     }
+
+    /// Check if the `DelayedHandler` instance contains a handler for the given key.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The key to check for in the `DelayedHandler` instance.
+    ///
+    /// # Returns
+    ///
+    /// True if the `DelayedHandler` instance contains a handler for the given key, false otherwise.
+    pub fn contains_handler_for_key(&self, key: &K) -> bool {
+        self.handlers.contains_key(key)
+    }
 }
 
 #[cfg(test)]
