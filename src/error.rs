@@ -3,6 +3,7 @@ use crate::multiqueue::MultiQueueError;
 use notify::Error as NotifyError;
 use std::error::Error;
 use thiserror::Error;
+use walkdir::Error as WalkdirError;
 
 #[derive(Error, Debug)]
 pub enum FoundationError {
@@ -53,6 +54,9 @@ pub enum FoundationError {
 
     #[error("Notify error: {0}")]
     NotifyError(NotifyError),
+
+    #[error("Walkdir error: {0}")]
+    WalkdirError(WalkdirError),
 }
 
 impl From<std::io::Error> for FoundationError {
@@ -94,5 +98,11 @@ impl From<std::num::ParseIntError> for FoundationError {
 impl From<NotifyError> for FoundationError {
     fn from(error: NotifyError) -> Self {
         FoundationError::NotifyError(error)
+    }
+}
+
+impl From<WalkdirError> for FoundationError {
+    fn from(error: WalkdirError) -> Self {
+        FoundationError::WalkdirError(error)
     }
 }

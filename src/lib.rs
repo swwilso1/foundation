@@ -12,6 +12,7 @@ pub mod delayed_handler;
 pub mod error;
 pub mod filesystem;
 pub mod filesystem_monitor;
+pub mod hash;
 pub mod keyvalueconfigfile;
 pub mod multiqueue;
 pub mod network;
