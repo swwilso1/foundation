@@ -3,6 +3,7 @@
 
 use crate::network::networkconfiguration::NetworkConfiguration;
 use crate::network::networkinterface::NetworkInterface;
+use log::debug;
 use std::collections::HashMap;
 
 cfg_if! {
@@ -198,7 +199,7 @@ impl NetworkManager {
                     // We are running on Ubuntu 64-bit, assume we have access to the Netplan service.
 
                     // Get the netplan .yaml files.
-                    let netplan_yaml_files = match std::fs::read_dir(NETPLAN_DIR) {
+                    let mut netplan_yaml_files = match std::fs::read_dir(NETPLAN_DIR) {
                         Ok(entries) => {
                             entries.into_iter()
                                 .filter(|entry| entry.is_ok())
@@ -209,7 +210,10 @@ impl NetworkManager {
                         Err(_) => return,
                     };
 
+                    netplan_yaml_files.sort();
+
                     for yaml_path in netplan_yaml_files {
+                        debug!("Loading {:?}", yaml_path);
                         let mut netplan_service = NetplanService::new(yaml_path.clone());
                         if let Err(e) = netplan_service.load_configuration(&mut self.configurations) {
                             error!("Failed to load Netplan configuration from {}: {}", yaml_path.to_string_lossy(), e);
