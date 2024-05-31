@@ -139,10 +139,8 @@ impl NetworkConfiguration {
                 .enable_io()
                 .build()
                 .unwrap();
-            std::thread::spawn(move || {
-                let result = rt.handle().block_on(interface_copy.is_wireless_interface());
-                tx.send(result)
-            });
+            let result = rt.block_on(interface_copy.is_wireless_interface());
+            tx.send(result).unwrap();
         };
         let result = rx.recv().unwrap();
         result || self.wifi_configuration.is_some()
