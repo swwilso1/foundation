@@ -33,6 +33,50 @@ impl NetplanService {
     }
 }
 
+fn load_wifi_config_helper(
+    config_map: &mut HashMap<String, NetworkConfiguration>,
+    name: &str,
+    wifis_value: &Value,
+) -> String {
+    // The keys for the wifis map might be the name of an interface,
+    // or it might be the name of a configuration with a match key
+    // that specifies the interface name.
+
+    let mut interface_name = name.to_string();
+
+    match config_map.get_mut(name) {
+        None => match wifis_value.as_mapping() {
+            Some(wifis_map) => match wifis_map.get("match") {
+                Some(match_value) => match match_value.as_mapping() {
+                    Some(match_map) => match match_map.get("name") {
+                        Some(name_value) => match name_value.as_str() {
+                            Some(name_value_str) => {
+                                interface_name = name_value_str.to_string();
+                            }
+                            None => {}
+                        },
+                        None => {}
+                    },
+                    None => {}
+                },
+                None => {}
+            },
+            None => {}
+        },
+        _ => {}
+    }
+
+    match config_map.get_mut(&interface_name) {
+        None => {
+            let config = NetworkConfiguration::new_with_name(&interface_name);
+            config_map.insert(interface_name.clone(), config);
+        }
+        _ => {}
+    }
+
+    return interface_name;
+}
+
 impl NetworkService for NetplanService {
     /// Load the network configurations from the Netplan configuration file.
     /// Insert a new configuration file in the configuration map or update the existing configuration
@@ -189,16 +233,25 @@ impl NetworkService for NetplanService {
                                         continue;
                                     }
 
-                                    let interface_name = name.as_str().unwrap();
+                                    // The keys for the wifis map might be the name of an interface,
+                                    // or it might be the name of a configuration with a match key
+                                    // that specifies the interface name.
+
+                                    // Try to get a previously named configuration
+                                    let temp_name = name.as_str().unwrap();
+
+                                    let interface_name =
+                                        load_wifi_config_helper(config_map, temp_name, wifis_value);
 
                                     let configuration =
-                                        if let Some(config) = config_map.get_mut(interface_name) {
+                                        if let Some(config) = config_map.get_mut(&interface_name) {
                                             config
                                         } else {
-                                            let config =
-                                                NetworkConfiguration::new_with_name(interface_name);
-                                            config_map.insert(interface_name.to_string(), config);
-                                            config_map.get_mut(interface_name).unwrap()
+                                            error!(
+                                                "Failed to get valid configuration for {}",
+                                                interface_name
+                                            );
+                                            continue;
                                         };
 
                                     for (inner_name, inner_value) in
@@ -214,6 +267,16 @@ impl NetworkService for NetplanService {
                                         if inner_key == "dhcp4" || inner_key == "dhcp6" {
                                             if let Some(bool_value) = inner_value.as_str() {
                                                 if bool_value == "true" {
+                                                    match inner_key {
+                                                        "dhcp4" | "dhcp6" => {
+                                                            configuration.address_mode =
+                                                                AddressMode::DHCP
+                                                        }
+                                                        _ => {}
+                                                    }
+                                                }
+                                            } else if let Some(bool_value) = inner_value.as_bool() {
+                                                if bool_value {
                                                     match inner_key {
                                                         "dhcp4" | "dhcp6" => {
                                                             configuration.address_mode =
