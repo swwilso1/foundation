@@ -103,7 +103,7 @@ impl NetworkManager {
         self.configurations.remove(name);
     }
 
-    /// Return true if any network configuration has an enabled wifi configuration.
+    /// Return true if any network configuration has an enabled Wi-Fi configuration.
     pub fn is_wireless_enabled(&self) -> bool {
         self.configurations
             .values()
