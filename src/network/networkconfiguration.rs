@@ -127,12 +127,16 @@ impl NetworkConfiguration {
 
     /// Return whether the network interface is wireless.
     pub fn is_wireless_enabled(&self) -> bool {
-        let wireless_interface = tokio::runtime::Builder::new_current_thread()
-            .enable_io()
-            .build()
-            .unwrap()
-            .block_on(self.interface.is_wireless_interface());
-        wireless_interface || self.wifi_configuration.is_some()
+        let result = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.block_on(self.interface.is_wireless_interface())
+        } else {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_io()
+                .build()
+                .unwrap();
+            rt.block_on(self.interface.is_wireless_interface())
+        };
+        result || self.wifi_configuration.is_some()
     }
 }
 
