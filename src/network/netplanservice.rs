@@ -56,7 +56,7 @@ impl NetworkService for NetplanService {
                     Ok(value) => {
                         // Now we suck out the data we need from the netplan YAML file.
                         if let Some(network) = value.get("network") {
-                            if !value.as_mapping().is_some() {
+                            if !network.as_mapping().is_some() {
                                 return Err(FoundationError::OperationFailed(
                                     "The 'network' key is not a mapping".to_string(),
                                 ));
