@@ -3,7 +3,6 @@
 
 use crate::network::networkconfiguration::NetworkConfiguration;
 use crate::network::networkinterface::NetworkInterface;
-use log::debug;
 use std::collections::HashMap;
 
 cfg_if! {
@@ -15,7 +14,7 @@ cfg_if! {
         use crate::network::networkservice::NetworkService;
         use crate::platformid::{PlatformId, ProcessorArchitecture};
         use crate::shell::Shell;
-        use log::error;
+        use log::{debug, error};
 
         const NETPLAN_DIR: &str = "/etc/netplan";
         const NETPLAN_CONF: &str = "/etc/netplan/99-network-manager-config.yaml";
