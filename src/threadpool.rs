@@ -38,6 +38,17 @@ impl ThreadJob {
     pub fn add_task(&mut self, task: Task) {
         self.job_list.push(task);
     }
+
+    /// Prepend a task to the `ThreadJob` object.
+    ///
+    /// # Arguments
+    ///
+    /// * `task` - The task to prepend to the job list.
+    ///
+    /// This function has O(tasks::len) time complexity.
+    pub fn prepend_task(&mut self, task: Task) {
+        self.job_list.insert(0, task);
+    }
 }
 
 // The `WorkerId` type is a unique identifier for a worker in the thread pool.
@@ -372,6 +383,37 @@ mod tests {
 
         assert_eq!(*control1.lock().unwrap(), true);
         assert_eq!(*control2.lock().unwrap(), true);
+
+        thread_pool.stop();
+    }
+
+    #[tokio::test]
+    async fn test_prepend_task() {
+        let mut thread_pool = ThreadPool::new(4);
+        let mut thread_job = ThreadJob::new();
+
+        let control1 = Arc::new(Mutex::new(false));
+        let control2 = Arc::new(Mutex::new(false));
+
+        let control1_c = control1.clone();
+        let control2_c = control2.clone();
+
+        thread_job.add_task(Box::pin(async move {
+            *control1_c.lock().unwrap() = true;
+            Ok(())
+        }));
+        thread_job.prepend_task(Box::pin(async move {
+            *control2_c.lock().unwrap() = true;
+            Ok(())
+        }));
+        if let Err(e) = thread_pool.add_job(thread_job) {
+            panic!("Error adding job to thread pool: {}", e);
+        }
+
+        sleep(Duration::from_millis(200)).await;
+
+        assert_eq!(*control2.lock().unwrap(), true);
+        assert_eq!(*control1.lock().unwrap(), true);
 
         thread_pool.stop();
     }
