@@ -359,6 +359,7 @@ impl ThreadPool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::result::DynResultError;
     use std::sync::{Arc, Mutex};
     use tokio::time::{sleep, Duration};
 
@@ -477,7 +478,7 @@ mod tests {
             let error = Box::new(FoundationError::ThreadTaskError(
                 "Error in task".to_string(),
             ));
-            Err(error as Box<dyn std::error::Error + Send + Sync + 'static>)
+            Err(error as DynResultError)
         }));
 
         if let Err(e) = thread_pool.add_job(thread_job) {
