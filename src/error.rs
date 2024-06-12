@@ -57,6 +57,9 @@ pub enum FoundationError {
 
     #[error("Walkdir error: {0}")]
     WalkdirError(WalkdirError),
+
+    #[error("Thread task error: {0}")]
+    ThreadTaskError(String),
 }
 
 impl From<std::io::Error> for FoundationError {

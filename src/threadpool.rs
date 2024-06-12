@@ -92,7 +92,13 @@ impl Worker {
                     loop {
                         // Execute all the tasks in the job.
                         for task in job.job_list {
-                            task.await?;
+                            match task.await {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    error!("Error executing task in worker {}: {}", worker_id, e);
+                                    break;
+                                }
+                            }
                         }
 
                         // Now check to see if we have another job in the channel.
@@ -449,6 +455,39 @@ mod tests {
 
         assert_eq!(*control1.lock().unwrap(), true);
         assert_eq!(*control2.lock().unwrap(), true);
+
+        thread_pool.stop();
+    }
+
+    #[tokio::test]
+    async fn test_error_in_tasks() {
+        let mut thread_pool = ThreadPool::new(4);
+        let mut thread_job = ThreadJob::new();
+
+        let control1 = Arc::new(Mutex::new(false));
+        let control2 = Arc::new(Mutex::new(false));
+
+        let control1_c = control1.clone();
+
+        thread_job.add_task(Box::pin(async move {
+            *control1_c.lock().unwrap() = true;
+            Ok(())
+        }));
+        thread_job.add_task(Box::pin(async move {
+            let error = Box::new(FoundationError::ThreadTaskError(
+                "Error in task".to_string(),
+            ));
+            Err(error as Box<dyn std::error::Error + Send + Sync + 'static>)
+        }));
+
+        if let Err(e) = thread_pool.add_job(thread_job) {
+            panic!("Error adding job to thread pool: {}", e);
+        }
+
+        sleep(Duration::from_millis(200)).await;
+
+        assert_eq!(*control1.lock().unwrap(), true);
+        assert_eq!(*control2.lock().unwrap(), false);
 
         thread_pool.stop();
     }
