@@ -461,6 +461,92 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_large_pool_with_slow_jobs() {
+        let mut thread_pool = ThreadPool::new(10);
+        let mut thread_job1 = ThreadJob::new();
+        let mut thread_job2 = ThreadJob::new();
+        let mut thread_job3 = ThreadJob::new();
+        let mut thread_job4 = ThreadJob::new();
+        let mut thread_job5 = ThreadJob::new();
+        let mut thread_job6 = ThreadJob::new();
+
+        let control1 = Arc::new(Mutex::new(false));
+        let control2 = Arc::new(Mutex::new(false));
+        let control3 = Arc::new(Mutex::new(false));
+        let control4 = Arc::new(Mutex::new(false));
+        let control5 = Arc::new(Mutex::new(false));
+        let control6 = Arc::new(Mutex::new(false));
+
+        let control1_c = control1.clone();
+        let control2_c = control2.clone();
+        let control3_c = control3.clone();
+        let control4_c = control4.clone();
+        let control5_c = control5.clone();
+        let control6_c = control6.clone();
+
+        thread_job1.add_task(Box::pin(async move {
+            sleep(Duration::from_secs(2)).await;
+            *control1_c.lock().unwrap() = true;
+            Ok(())
+        }));
+        thread_job2.add_task(Box::pin(async move {
+            sleep(Duration::from_secs(2)).await;
+            *control2_c.lock().unwrap() = true;
+            Ok(())
+        }));
+        thread_job3.add_task(Box::pin(async move {
+            sleep(Duration::from_secs(2)).await;
+            *control3_c.lock().unwrap() = true;
+            Ok(())
+        }));
+        thread_job4.add_task(Box::pin(async move {
+            sleep(Duration::from_secs(2)).await;
+            *control4_c.lock().unwrap() = true;
+            Ok(())
+        }));
+        thread_job5.add_task(Box::pin(async move {
+            sleep(Duration::from_secs(2)).await;
+            *control5_c.lock().unwrap() = true;
+            Ok(())
+        }));
+        thread_job6.add_task(Box::pin(async move {
+            sleep(Duration::from_secs(2)).await;
+            *control6_c.lock().unwrap() = true;
+            Ok(())
+        }));
+
+        if let Err(e) = thread_pool.add_job(thread_job1) {
+            panic!("Error adding job 1 to thread pool: {}", e);
+        }
+        if let Err(e) = thread_pool.add_job(thread_job2) {
+            panic!("Error adding job 2 to thread pool: {}", e);
+        }
+        if let Err(e) = thread_pool.add_job(thread_job3) {
+            panic!("Error adding job 3 to thread pool: {}", e);
+        }
+        if let Err(e) = thread_pool.add_job(thread_job4) {
+            panic!("Error adding job 4 to thread pool: {}", e);
+        }
+        if let Err(e) = thread_pool.add_job(thread_job5) {
+            panic!("Error adding job 5 to thread pool: {}", e);
+        }
+        if let Err(e) = thread_pool.add_job(thread_job6) {
+            panic!("Error adding job 6 to thread pool: {}", e);
+        }
+
+        sleep(Duration::from_millis(2100)).await;
+
+        assert_eq!(*control1.lock().unwrap(), true);
+        assert_eq!(*control2.lock().unwrap(), true);
+        assert_eq!(*control3.lock().unwrap(), true);
+        assert_eq!(*control4.lock().unwrap(), true);
+        assert_eq!(*control5.lock().unwrap(), true);
+        assert_eq!(*control6.lock().unwrap(), true);
+
+        thread_pool.stop();
+    }
+
+    #[tokio::test]
     async fn test_error_in_tasks() {
         let mut thread_pool = ThreadPool::new(4);
         let mut thread_job = ThreadJob::new();
