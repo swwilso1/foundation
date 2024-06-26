@@ -1,8 +1,12 @@
 use crate::error::FoundationError;
 use blake3::Hasher;
-use std::fs::File;
-use std::io::BufReader;
+use std::fs::File as StdFile;
+use std::io::BufReader as StdBufReader;
 use std::path::Path;
+use tokio::{
+    fs::File as TokioFile,
+    io::BufReader as TokioBufReader,
+};
 
 /// Get the hash of a file.
 ///
@@ -14,10 +18,18 @@ use std::path::Path;
 ///
 /// A Result containing a string. If the file is successfully hashed, the result will be `Ok(String)`.
 pub fn get_hash_for_file(path: &Path) -> Result<String, FoundationError> {
-    let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
+    let file = StdFile::open(path)?;
+    let mut reader = StdBufReader::new(file);
     let mut hasher = Hasher::new();
     std::io::copy(&mut reader, &mut hasher)?;
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
+pub async fn async_get_hash_for_file(path: &Path) -> Result<String, FoundationError> {
+    let file = TokioFile::open(path).await?;
+    let mut reader = TokioBufReader::new(file);
+    let mut hasher = Hasher::new();
+    tokio::io::copy(&mut reader, &mut hasher).await?;
     Ok(hasher.finalize().to_hex().to_string())
 }
 
@@ -38,9 +50,31 @@ pub fn get_hash_for_dir(path: &Path, include_file_names: bool) -> Result<String,
     {
         let entry = entry?;
         if entry.file_type().is_file() {
-            let file = File::open(entry.path())?;
-            let mut reader = BufReader::new(file);
+            let file = StdFile::open(entry.path())?;
+            let mut reader = StdBufReader::new(file);
             std::io::copy(&mut reader, &mut hasher)?;
+            if include_file_names {
+                // Now add the file path to the hash. This lets us distinguish directories that
+                // have identical contents, but the different file names.
+                let file_path = entry.path().display().to_string();
+                hasher.update(file_path.as_bytes());
+            }
+        }
+    }
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
+pub async fn async_get_hash_for_dir(path: &Path, include_file_names: bool) -> Result<String, FoundationError> {
+    let mut hasher = Hasher::new();
+    for entry in walkdir::WalkDir::new(path)
+        .min_depth(1)
+        .sort_by(|a, b| a.file_name().cmp(b.file_name()))
+    {
+        let entry = entry?;
+        if entry.file_type().is_file() {
+            let file = TokioFile::open(entry.path()).await?;
+            let mut reader = TokioBufReader::new(file);
+            tokio::io::copy(&mut reader, &mut hasher).await?;
             if include_file_names {
                 // Now add the file path to the hash. This lets us distinguish directories that
                 // have identical contents, but the different file names.

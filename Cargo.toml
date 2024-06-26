@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-blake3 = "1.5.1"
+blake3 = { git = "https://github.com/swwilso1/BLAKE3.git", branch = "feature/async_write", features = ["std", "tokio"]}
 cfg-if = "1.0"
 chrono = "0.4"
 env_logger = "0.11"
