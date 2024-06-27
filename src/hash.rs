@@ -3,10 +3,7 @@ use blake3::Hasher;
 use std::fs::File as StdFile;
 use std::io::BufReader as StdBufReader;
 use std::path::Path;
-use tokio::{
-    fs::File as TokioFile,
-    io::BufReader as TokioBufReader,
-};
+use tokio::{fs::File as TokioFile, io::BufReader as TokioBufReader};
 
 /// Get the hash of a file.
 ///
@@ -64,7 +61,10 @@ pub fn get_hash_for_dir(path: &Path, include_file_names: bool) -> Result<String,
     Ok(hasher.finalize().to_hex().to_string())
 }
 
-pub async fn async_get_hash_for_dir(path: &Path, include_file_names: bool) -> Result<String, FoundationError> {
+pub async fn async_get_hash_for_dir(
+    path: &Path,
+    include_file_names: bool,
+) -> Result<String, FoundationError> {
     let mut hasher = Hasher::new();
     for entry in walkdir::WalkDir::new(path)
         .min_depth(1)
