@@ -60,6 +60,7 @@ impl EventHandler for MonitorEventHandler {
 }
 
 /// The file system monitor object.
+#[derive(Clone)]
 pub struct FileSystemMonitor {
     /// The thread controller for the monitor thread.
     thread_controller: Arc<ThreadController>,
