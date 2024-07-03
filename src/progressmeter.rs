@@ -100,6 +100,22 @@ impl ProgressMeter {
         self.last_percent = percent;
     }
 
+    /// Set the current number of units that the progress meter has tracked.
+    ///
+    /// If the current unit is larger than the amount the tracker is tracking, then
+    /// the method will set the current units to the total units being tracked.
+    ///
+    /// # Arguments
+    ///
+    /// * `current` - The current number of units that the progress meter has tracked.
+    pub fn set_current(&mut self, current: u64) {
+        if current > self.meter_total {
+            self.meter_current = self.meter_total;
+        } else {
+            self.meter_current = current;
+        }
+    }
+
     /// Set the total number of units that the progress meter is tracking.
     pub fn set_total(&mut self, total: u64) {
         self.meter_total = total;
@@ -165,5 +181,23 @@ mod tests {
         progress_meter.increment_by(10);
         progress_meter.notify(false);
         assert_eq!(rx.recv().await.unwrap(), 100);
+    }
+
+    #[tokio::test]
+    async fn test_progress_meter_set_current() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<u8>();
+        let mut progress_meter = ProgressMeter::new_with_notifier_and_size(
+            Box::new(move |percent| {
+                tx.send(percent).unwrap();
+            }),
+            100,
+        );
+        progress_meter.set_current(10);
+        progress_meter.notify(false);
+        assert_eq!(rx.recv().await.unwrap(), 10);
+
+        progress_meter.set_current(50);
+        progress_meter.notify(false);
+        assert_eq!(rx.recv().await.unwrap(), 50);
     }
 }
