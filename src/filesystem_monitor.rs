@@ -63,6 +63,7 @@ impl EventHandler for MonitorEventHandler {
 #[derive(Clone)]
 pub struct FileSystemMonitor {
     /// The thread controller for the monitor thread.
+    // The file system monitor requires a thread to run the notify crate's poll watcher.
     thread_controller: Arc<ThreadController>,
 
     /// The poll watcher for the monitor thread.

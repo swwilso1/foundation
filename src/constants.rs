@@ -1,3 +1,6 @@
+//! The `constants` module contains useful contents used in the library.
+
+// Standard metric prefixes.
 pub const KILO: u64 = 1024;
 pub const MEGA: u64 = 1024 * KILO;
 pub const GIGA: u64 = 1024 * MEGA;
@@ -7,6 +10,7 @@ pub const EXA: u64 = 1024 * PETA;
 pub const ZETTA: u128 = 1024 * (EXA as u128);
 pub const YOTTA: u128 = 1024 * ZETTA;
 
+// Standard prefixes in base 10.
 pub const MKILO: u64 = 1000;
 pub const MMEGA: u64 = 1000 * MKILO;
 pub const MGIGA: u64 = 1000 * MMEGA;

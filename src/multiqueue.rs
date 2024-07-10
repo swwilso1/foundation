@@ -19,6 +19,7 @@ pub enum MultiQueueError<T> {
     Fork,
 }
 
+// Provide conversions to string values for MultiQueueError.
 impl<T> Display for MultiQueueError<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

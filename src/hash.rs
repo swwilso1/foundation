@@ -1,3 +1,7 @@
+//! The `hash` module provides synchronous and asynchronous functions to hash files and directories.p
+//! The functions in this module use the `blake3` crate to hash files and directories. The asynchronous
+//! functions use the `tokio` crate to perform the asynchronous operations.
+
 use crate::error::FoundationError;
 use blake3::Hasher;
 use std::fs::File as StdFile;
@@ -22,6 +26,15 @@ pub fn get_hash_for_file(path: &Path) -> Result<String, FoundationError> {
     Ok(hasher.finalize().to_hex().to_string())
 }
 
+/// Asynchronously get the hash of a file.
+///
+/// # Arguments
+///
+/// * `path` - A reference to a Path.
+///
+/// # Returns
+///
+/// A Result containing a string. If the file is successfully hashed, the result will be `Ok(String)`.
 pub async fn async_get_hash_for_file(path: &Path) -> Result<String, FoundationError> {
     let file = TokioFile::open(path).await?;
     let mut reader = TokioBufReader::new(file);
@@ -61,6 +74,16 @@ pub fn get_hash_for_dir(path: &Path, include_file_names: bool) -> Result<String,
     Ok(hasher.finalize().to_hex().to_string())
 }
 
+/// Asynchronously get the hash of a directory.
+///
+/// # Arguments
+///
+/// * `path` - A reference to a Path.
+/// * `include_file_names` - A boolean indicating whether to include file names in the hash.
+///
+/// # Returns
+///
+/// A Result containing a string. If the directory is successfully hashed, the result will be `Ok(String)`.
 pub async fn async_get_hash_for_dir(
     path: &Path,
     include_file_names: bool,

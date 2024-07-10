@@ -1,5 +1,5 @@
 //! The `filesystems` module contains the `FileSystem` enum, which represent
-//! the filesystem type of a partition.
+//! the different types of file systems a partition can have.
 
 use crate::error::FoundationError;
 use std::fmt;
@@ -45,6 +45,7 @@ pub enum FileSystem {
     CIFS,
 }
 
+// Provide a conversion from a string to a FileSystem enum.
 impl FromStr for FileSystem {
     type Err = FoundationError;
 
@@ -66,6 +67,7 @@ impl FromStr for FileSystem {
     }
 }
 
+// Provide a conversion from a FileSystem enum to a string.
 impl fmt::Display for FileSystem {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let text = match self {
@@ -85,6 +87,7 @@ impl fmt::Display for FileSystem {
     }
 }
 
+// Provide a conversion from an i64 to a FileSystem enum.
 impl TryFrom<i64> for FileSystem {
     type Error = FoundationError;
 
@@ -109,6 +112,15 @@ impl TryFrom<i64> for FileSystem {
     }
 }
 
+/// Determine if a filesystem is mountable.
+///
+/// # Arguments
+///
+/// * `fs` - The filesystem to check.
+///
+/// # Returns
+///
+/// A boolean indicating if the filesystem is mountable.
 pub fn filesystem_is_mountable(fs: FileSystem) -> bool {
     match fs {
         FileSystem::Ext2

@@ -8,6 +8,24 @@
 /// captured by the closure must use a type that you can share between closures. That implies the
 /// use of things like `Arc`, `RwLock`, `Mutex`, etc. to share the captured variables between
 /// closures.
+///
+/// # Example
+///
+/// ```rust
+/// use foundation::defer::Defer;
+///
+/// fn main() {
+///    let x = std::sync::Arc::new(std::sync::RwLock::new(0));
+///    let x_c = x.clone();
+///    {
+///      let _defer = Defer::new(move || *x_c.write().unwrap() = 1);
+///    }
+///    assert_eq!(*x.read().unwrap(), 1);
+/// }
+/// ```
+///
+/// In using `Defer`, the programmer must often explicitly write a drop() statement in order
+/// to force the compiler to not optimize away the deferred object.
 pub struct Defer {
     action: Box<dyn FnMut() -> () + Send + Sync + 'static>,
 }
