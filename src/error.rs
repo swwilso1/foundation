@@ -7,6 +7,12 @@ use walkdir::Error as WalkdirError;
 
 #[derive(Error, Debug)]
 pub enum FoundationError {
+    #[error("Address Parse error: {0}")]
+    AddressParseError(std::net::AddrParseError),
+
+    #[error("{0}")]
+    GenericError(Box<dyn Error + Send + Sync + 'static>),
+
     #[error("Handler not found")]
     HandlerNotFound,
 
@@ -16,11 +22,26 @@ pub enum FoundationError {
     #[error("Nothing implements {0}")]
     InvalidOperation(String),
 
+    #[error("IO error: {0}")]
+    IO(std::io::Error),
+
+    #[error("MultiQueue error: {0}")]
+    MultiQueueError(String),
+
+    #[error("Notify error: {0}")]
+    NotifyError(NotifyError),
+
     #[error("{0}")]
     OperationFailed(String),
 
-    #[error("IO error: {0}")]
-    IO(std::io::Error),
+    #[error("Parse integer error: {0}")]
+    ParseIntError(std::num::ParseIntError),
+
+    #[error("Serde YAML error: {0}")]
+    SerdeYamlError(serde_yaml::Error),
+
+    #[error("Thread task error: {0}")]
+    ThreadTaskError(String),
 
     #[error("Tokio mpsc send error: {0}")]
     TokioMpscSend(String),
@@ -31,35 +52,14 @@ pub enum FoundationError {
     #[error("Uknown partition table: {0}")]
     UnknownPartitionTable(String),
 
-    #[error("{0}")]
-    GenericError(Box<dyn Error + Send + Sync + 'static>),
-
-    #[error("MultiQueue error: {0}")]
-    MultiQueueError(String),
-
-    #[error("Serde YAML error: {0}")]
-    SerdeYamlError(serde_yaml::Error),
-
-    #[error("Address Parse error: {0}")]
-    AddressParseError(std::net::AddrParseError),
-
-    #[error("Parse integer error: {0}")]
-    ParseIntError(std::num::ParseIntError),
+    #[error("Unknown Wireless Mode: {0}")]
+    UnknownWirelessMode(String),
 
     #[error("Unknown Wireless Standard: {0}")]
     UnknownWirelessStandard(String),
 
-    #[error("Unknown Wireless Mode: {0}")]
-    UnknownWirelessMode(String),
-
-    #[error("Notify error: {0}")]
-    NotifyError(NotifyError),
-
     #[error("Walkdir error: {0}")]
     WalkdirError(WalkdirError),
-
-    #[error("Thread task error: {0}")]
-    ThreadTaskError(String),
 }
 
 impl From<std::io::Error> for FoundationError {
