@@ -25,6 +25,39 @@ pub enum ByteMetricBase {
 ///
 /// A string representing the normalized byte size.
 pub fn normalize_byte_size(size: u128, metric_base: ByteMetricBase) -> String {
+    let (divisor, suffix) = normalize_size_for_divisor_and_suffix(size, metric_base);
+    format!("{:.2} {}", (size as f64) / (divisor as f64), suffix)
+}
+
+/// Convert a byte size into a normalized size and suffix.
+///
+/// # Arguments
+///
+/// * `size` - The size in bytes to normalize.
+/// * `metric_base` - The base to use when converting bytes to a human-readable format.
+///
+/// # Returns
+///
+/// A tuple containing the normalized size and suffix.
+pub fn normalize_size(size: u128, metric_base: ByteMetricBase) -> (f64, String) {
+    let (divisor, suffix) = normalize_size_for_divisor_and_suffix(size, metric_base);
+    ((size as f64) / (divisor as f64), suffix)
+}
+
+/// Calculate a divisor and suffix for a given size and metric base.
+///
+/// # Arguments
+///
+/// * `size` - The size in bytes to normalize.
+/// * `metric_base` - The base to use when converting bytes to a human-readable format.
+///
+/// # Returns
+///
+/// A tuple containing the divisor and suffix.
+fn normalize_size_for_divisor_and_suffix(
+    size: u128,
+    metric_base: ByteMetricBase,
+) -> (u128, String) {
     let (suffix_map, divisor_map): (HashMap<u128, String>, HashMap<u128, u128>) = match metric_base
     {
         ByteMetricBase::Metric => (
@@ -139,7 +172,7 @@ pub fn normalize_byte_size(size: u128, metric_base: ByteMetricBase) -> String {
         )
     };
 
-    format!("{:.2} {}", (size as f64) / (divisor as f64), suffix)
+    (divisor, suffix)
 }
 
 #[cfg(test)]
@@ -284,6 +317,150 @@ mod tests {
         assert_eq!(
             normalize_byte_size(1000000000000000000000000, ByteMetricBase::Decimal),
             "1.00 YB"
+        );
+    }
+
+    #[test]
+    fn test_normalize_size_of_metric() {
+        assert_eq!(
+            normalize_size(10, ByteMetricBase::Metric),
+            (10.0, "bytes".to_string())
+        );
+        assert_eq!(
+            normalize_size(10, ByteMetricBase::Decimal),
+            (10.0, "bytes".to_string())
+        );
+        assert_eq!(
+            normalize_size(1024, ByteMetricBase::Metric),
+            (1.0, "Kb".to_string())
+        );
+        assert_eq!(
+            normalize_size(1024, ByteMetricBase::Decimal),
+            (1.024, "KB".to_string())
+        );
+        assert_eq!(
+            normalize_size(1048576, ByteMetricBase::Metric),
+            (1.0, "Mb".to_string())
+        );
+        assert_eq!(
+            normalize_size(1048576, ByteMetricBase::Decimal),
+            (1.048576, "MB".to_string())
+        );
+        assert_eq!(
+            normalize_size(1073741824, ByteMetricBase::Metric),
+            (1.0, "Gb".to_string())
+        );
+        assert_eq!(
+            normalize_size(1073741824, ByteMetricBase::Decimal),
+            (1.073741824, "GB".to_string())
+        );
+        assert_eq!(
+            normalize_size(1099511627776, ByteMetricBase::Metric),
+            (1.0, "Tb".to_string())
+        );
+        assert_eq!(
+            normalize_size(1099511627776, ByteMetricBase::Decimal),
+            (1.099511627776, "TB".to_string())
+        );
+        assert_eq!(
+            normalize_size(1125899906842624, ByteMetricBase::Metric),
+            (1.0, "Pb".to_string())
+        );
+        assert_eq!(
+            normalize_size(1125899906842624, ByteMetricBase::Decimal),
+            (1.125899906842624, "PB".to_string())
+        );
+        assert_eq!(
+            normalize_size(1152921504606846976, ByteMetricBase::Metric),
+            (1.0, "Eb".to_string())
+        );
+        assert_eq!(
+            normalize_size(1152921504606846976, ByteMetricBase::Decimal),
+            (1.152921504606847, "EB".to_string())
+        );
+        assert_eq!(
+            normalize_size(1180591620717411303424, ByteMetricBase::Metric),
+            (1.0, "Zb".to_string())
+        );
+        assert_eq!(
+            normalize_size(1180591620717411303424, ByteMetricBase::Decimal),
+            (1.1805916207174113, "ZB".to_string())
+        );
+        assert_eq!(
+            normalize_size(1208925819614629174706176, ByteMetricBase::Metric),
+            (1.0, "Yb".to_string())
+        );
+        assert_eq!(
+            normalize_size(1208925819614629174706176, ByteMetricBase::Decimal),
+            (1.2089258196146292, "YB".to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_size_of_decimal() {
+        assert_eq!(
+            normalize_size(1000, ByteMetricBase::Metric),
+            (1000.0, "bytes".to_string())
+        );
+        assert_eq!(
+            normalize_size(1000, ByteMetricBase::Decimal),
+            (1.0, "KB".to_string())
+        );
+        assert_eq!(
+            normalize_size(1000000, ByteMetricBase::Metric),
+            (976.5625, "Kb".to_string())
+        );
+        assert_eq!(
+            normalize_size(1000000, ByteMetricBase::Decimal),
+            (1.0, "MB".to_string())
+        );
+        assert_eq!(
+            normalize_size(1000000000, ByteMetricBase::Metric),
+            (953.67431640625, "Mb".to_string())
+        );
+        assert_eq!(
+            normalize_size(1000000000, ByteMetricBase::Decimal),
+            (1.0, "GB".to_string())
+        );
+        assert_eq!(
+            normalize_size(1000000000000, ByteMetricBase::Metric),
+            (931.3225746154785, "Gb".to_string())
+        );
+        assert_eq!(
+            normalize_size(1000000000000, ByteMetricBase::Decimal),
+            (1.0, "TB".to_string())
+        );
+        assert_eq!(
+            normalize_size(1000000000000000, ByteMetricBase::Metric),
+            (909.4947017729282, "Tb".to_string())
+        );
+        assert_eq!(
+            normalize_size(1000000000000000, ByteMetricBase::Decimal),
+            (1.0, "PB".to_string())
+        );
+        assert_eq!(
+            normalize_size(1000000000000000000, ByteMetricBase::Metric),
+            (888.1784197001252, "Pb".to_string())
+        );
+        assert_eq!(
+            normalize_size(1000000000000000000, ByteMetricBase::Decimal),
+            (1.0, "EB".to_string())
+        );
+        assert_eq!(
+            normalize_size(1000000000000000000000, ByteMetricBase::Metric),
+            (867.3617379884035, "Eb".to_string())
+        );
+        assert_eq!(
+            normalize_size(1000000000000000000000, ByteMetricBase::Decimal),
+            (1.0, "ZB".to_string())
+        );
+        assert_eq!(
+            normalize_size(1000000000000000000000000, ByteMetricBase::Metric),
+            (847.0329472543003, "Zb".to_string())
+        );
+        assert_eq!(
+            normalize_size(1000000000000000000000000, ByteMetricBase::Decimal),
+            (1.0, "YB".to_string())
         );
     }
 }
