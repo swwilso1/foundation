@@ -25,6 +25,7 @@ is not supported at this time.
 
 ## Features
 
+- **`foundation::bytes`**: Utilities for working with capacity and size in bytes.
 - **`foundation::constants`**: Common constants.
 - **`foundation::defer`**: Defer execution of a closure until the end of the current scope.
 - **`foundation::delayed_handler`**: A mechanism for scheduling execution after some delay period.

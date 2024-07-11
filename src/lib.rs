@@ -6,6 +6,7 @@ extern crate lazy_static;
 
 extern crate num_cpus;
 
+pub mod bytes;
 pub mod constants;
 pub mod defer;
 pub mod delayed_handler;
