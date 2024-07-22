@@ -19,6 +19,8 @@ pub mod multiqueue;
 pub mod network;
 pub mod partition;
 pub mod platformid;
+pub mod process;
+pub mod process_watcher;
 pub mod progressmeter;
 pub mod protected;
 pub mod result;

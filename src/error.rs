@@ -25,6 +25,9 @@ pub enum FoundationError {
     #[error("IO error: {0}")]
     IO(std::io::Error),
 
+    #[error("Join error: {0}")]
+    JoinError(String),
+
     #[error("MultiQueue error: {0}")]
     MultiQueueError(String),
 

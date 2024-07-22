@@ -10,6 +10,7 @@ blake3 = { git = "https://github.com/swwilso1/BLAKE3.git", branch = "feature/asy
 cfg-if = "1.0"
 chrono = "0.4"
 env_logger = "0.11"
+errno = "*"
 futures = "0.3"
 lazy_static = "1.4"
 libc = "0.2"
