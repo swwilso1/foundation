@@ -17,8 +17,14 @@ pub fn watch_processes_for_termination(
 ) -> Result<Vec<ProcessId>, FoundationError> {
     let mut dead_processes: Vec<ProcessId> = Vec::new();
     for process_id in processes {
+        let pid = process_id as i32;
+
+        if pid < 0 {
+            continue;
+        }
+
         // Sending the signal 0 to a process will check if the process is still alive.
-        let result = unsafe { kill(process_id, 0) };
+        let result = unsafe { kill(pid, 0) };
         if result == -1 {
             let errno = errno();
             if errno.0 == ESRCH {

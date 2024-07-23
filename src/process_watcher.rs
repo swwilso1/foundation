@@ -10,10 +10,10 @@ use std::sync::{Arc, Mutex};
 use std::thread::Builder;
 
 /// Type for a process ID.
-pub type ProcessId = i32;
+pub type ProcessId = u32;
 
 /// Type for a callback that is called when a process terminates.
-pub type Callback = Box<dyn FnMut(i32) + Send + Sync + 'static>;
+pub type Callback = Box<dyn FnMut(ProcessId) + Send + Sync + 'static>;
 
 /// A process watcher that can be used to watch processes for termination.
 pub struct ProcessWatcher {
