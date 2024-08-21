@@ -93,10 +93,14 @@ impl FileSystemMonitor {
 
     /// Start the file system monitor thread.
     ///
+    /// # Arguments
+    ///
+    /// * `timeout` - The timeout in milliseconds for the monitor to poll the system.
+    ///
     /// # Returns
     ///
     /// Ok(()) on success and a `FoundationError` if an error occurred.
-    pub fn start(&mut self) -> Result<(), FoundationError> {
+    pub fn start(&mut self, timeout: u64) -> Result<(), FoundationError> {
         let controller = self.thread_controller.clone();
         let watcher = self.poll_watcher.clone();
 
@@ -108,7 +112,7 @@ impl FileSystemMonitor {
                     watcher.lock().unwrap().poll()?;
 
                     // Sleep for a short time to avoid busy waiting.
-                    controller.wait_timeout(Duration::from_millis(100));
+                    controller.wait_timeout(Duration::from_millis(timeout));
                 }
                 Ok::<(), FoundationError>(())
             })?;
@@ -166,7 +170,7 @@ mod tests {
         });
         let config = Config::default();
         let mut monitor = FileSystemMonitor::new(callback, config).unwrap();
-        monitor.start().unwrap();
+        monitor.start(100).unwrap();
         monitor.stop();
         assert!(monitor.thread_controller.should_stop());
     }
@@ -183,7 +187,7 @@ mod tests {
         let mut monitor = FileSystemMonitor::new(callback, config).unwrap();
         let temp_dir = std::env::temp_dir();
         monitor.watch(&temp_dir, RecursiveMode::Recursive).unwrap();
-        monitor.start().unwrap();
+        monitor.start(100).unwrap();
         let tmp_file = temp_dir.join("filesystem_monitor_test.txt");
         std::fs::write(&tmp_file, "test").unwrap();
         sleep(Duration::from_secs(1));
