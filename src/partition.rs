@@ -2,6 +2,7 @@
 //! table types of a disk.
 
 use crate::error::FoundationError;
+use crate::filesystem::FileSystem;
 use std::fmt;
 use std::fmt::Formatter;
 use std::str::FromStr;
@@ -55,6 +56,26 @@ impl TryFrom<i64> for PartitionTable {
     }
 }
 
+impl TryFrom<FileSystem> for PartitionTable {
+    type Error = FoundationError;
+
+    fn try_from(value: FileSystem) -> Result<Self, Self::Error> {
+        match value {
+            FileSystem::Fat16 | FileSystem::Fat32 | FileSystem::ExFat => Ok(PartitionTable::DOS),
+            FileSystem::Ext2
+            | FileSystem::Ext3
+            | FileSystem::Ext4
+            | FileSystem::NTFS
+            | FileSystem::HFSPlus
+            | FileSystem::APFS => Ok(PartitionTable::GPT),
+            _ => Err(FoundationError::InvalidConversion(
+                "FileSystem".to_string(),
+                "PartitionTable",
+            )),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,5 +112,17 @@ mod tests {
 
         let dos = PartitionTable::DOS;
         assert_eq!(dos.to_string(), "dos");
+    }
+
+    #[test]
+    fn test_partition_table_try_from_filesystem() {
+        let gpt = PartitionTable::try_from(FileSystem::Ext2).unwrap();
+        assert_eq!(gpt, PartitionTable::GPT);
+
+        let dos = PartitionTable::try_from(FileSystem::Fat32).unwrap();
+        assert_eq!(dos, PartitionTable::DOS);
+
+        let unknown = PartitionTable::try_from(FileSystem::CIFS);
+        assert!(unknown.is_err());
     }
 }
