@@ -2,12 +2,13 @@
 //! the different types of file systems a partition can have.
 
 use crate::error::FoundationError;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Formatter;
 use std::str::FromStr;
 
 /// The `FileSystem` enum represents the different types of filesystems that a partition can have.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum FileSystem {
     /// The ext2 filesystem.
     Ext2,
