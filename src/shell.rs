@@ -1,7 +1,7 @@
 //! The `shell` module contains code for interacting with a shell sub-process.
 
 use crate::error::FoundationError;
-use std::process::{Command, Output};
+use std::process::{Child, Command, Output};
 
 /// The `Shell` struct represents a shell sub-process.
 pub struct Shell {}
@@ -53,6 +53,37 @@ impl Shell {
             }
         } else {
             (None, None)
+        }
+    }
+
+    /// Runs a command with the given arguments. The command will launch as a child
+    /// of the currently running process.
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - The command to run.
+    /// * `arguments` - The arguments to pass to the command.
+    ///
+    /// # Returns
+    ///
+    /// A `Child` object on success or a `FoundationError` if an error occurs.
+    pub fn spawn_command(command: &str, arguments: Vec<String>) -> Result<Child, FoundationError> {
+        let args: Vec<&str> = arguments.iter().map(|s| s.as_str()).collect();
+        let output = if cfg!(target_os = "windows") {
+            Command::new("cmd")
+                .arg("/C")
+                .arg(command)
+                .args(args.iter().map(|arg| arg.to_string()))
+                .spawn()
+        } else {
+            Command::new(command)
+                .args(args.iter().map(|arg| arg.to_string()))
+                .spawn()
+        };
+
+        match output {
+            Ok(child) => Ok(child),
+            Err(e) => Err(FoundationError::from(e)),
         }
     }
 }
