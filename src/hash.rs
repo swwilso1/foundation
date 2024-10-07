@@ -3,11 +3,17 @@
 //! functions use the `tokio` crate to perform the asynchronous operations.
 
 use crate::error::FoundationError;
+use crate::progressmeter::ProgressMeter;
 use blake3::Hasher;
 use std::fs::File as StdFile;
 use std::io::BufReader as StdBufReader;
 use std::path::Path;
-use tokio::{fs::File as TokioFile, io::BufReader as TokioBufReader};
+use tokio::{
+    fs::File as TokioFile,
+    io::{AsyncReadExt, BufReader as TokioBufReader},
+};
+
+const CHUNK_SIZE: usize = 1024 * 1024;
 
 /// Get the hash of a file.
 ///
@@ -40,6 +46,39 @@ pub async fn async_get_hash_for_file(path: &Path) -> Result<String, FoundationEr
     let mut reader = TokioBufReader::new(file);
     let mut hasher = Hasher::new();
     tokio::io::copy(&mut reader, &mut hasher).await?;
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
+/// Asynchronously get the hash of a file with a progress meter.
+///
+/// # Arguments
+///
+/// * `path` - A reference to a Path.
+/// * `meter` - A mutable reference to a ProgressMeter.
+///
+/// # Returns
+///
+/// A Result containg the hash of the file contents in a String or a FoundationError if an
+/// error occurs.
+pub async fn async_get_hash_for_file_with_meter(
+    path: &Path,
+    meter: &mut ProgressMeter,
+) -> Result<String, FoundationError> {
+    let mut file = TokioFile::open(path).await?;
+    let metadata = file.metadata().await?;
+    let mut chunk = vec![0u8; CHUNK_SIZE];
+    let mut hasher = Hasher::new();
+
+    let mut left_to_read = metadata.len();
+    while left_to_read > 0 {
+        let bytes_to_read = std::cmp::min(CHUNK_SIZE as u64, left_to_read) as usize;
+        let bytes_read = file.read(&mut chunk[..bytes_to_read]).await?;
+        left_to_read -= bytes_read as u64;
+        hasher.update(&chunk[..bytes_read]);
+        meter.increment_by(bytes_read as u64);
+        meter.notify(false);
+    }
+
     Ok(hasher.finalize().to_hex().to_string())
 }
 
@@ -98,6 +137,53 @@ pub async fn async_get_hash_for_dir(
             let file = TokioFile::open(entry.path()).await?;
             let mut reader = TokioBufReader::new(file);
             tokio::io::copy(&mut reader, &mut hasher).await?;
+            if include_file_names {
+                // Now add the file path to the hash. This lets us distinguish directories that
+                // have identical contents, but the different file names.
+                let file_path = entry.path().display().to_string();
+                hasher.update(file_path.as_bytes());
+            }
+        }
+    }
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
+/// Asynchronously get the hash of a directory with a progress meter.
+///
+/// # Arguments
+///
+/// * `path` - A reference to a Path.
+/// * `include_file_names` - A boolean indicating whether to include file names in the hash.
+/// * `meter` - A mutable reference to a ProgressMeter.
+///
+/// # Returns
+///
+/// A Result containing the hash of the directory contents in a String or a FoundationError if an
+/// error occurs.
+pub async fn async_get_hash_for_dir_with_meter(
+    path: &Path,
+    include_file_names: bool,
+    meter: &mut ProgressMeter,
+) -> Result<String, FoundationError> {
+    let mut hasher = Hasher::new();
+    for entry in walkdir::WalkDir::new(path)
+        .min_depth(1)
+        .sort_by(|a, b| a.file_name().cmp(b.file_name()))
+    {
+        let entry = entry?;
+        if entry.file_type().is_file() {
+            let mut file = TokioFile::open(entry.path()).await?;
+            let metadata = file.metadata().await?;
+            let mut chunk = vec![0u8; CHUNK_SIZE];
+            let mut left_to_read = metadata.len();
+            while left_to_read > 0 {
+                let bytes_to_read = std::cmp::min(CHUNK_SIZE as u64, left_to_read) as usize;
+                let bytes_read = file.read(&mut chunk[..bytes_to_read]).await?;
+                left_to_read -= bytes_read as u64;
+                hasher.update(&chunk[..bytes_read]);
+                meter.increment_by(bytes_read as u64);
+                meter.notify(false);
+            }
             if include_file_names {
                 // Now add the file path to the hash. This lets us distinguish directories that
                 // have identical contents, but the different file names.
