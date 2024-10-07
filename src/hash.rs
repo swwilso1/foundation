@@ -8,6 +8,7 @@ use blake3::Hasher;
 use std::fs::File as StdFile;
 use std::io::BufReader as StdBufReader;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use tokio::{
     fs::File as TokioFile,
     io::{AsyncReadExt, BufReader as TokioBufReader},
@@ -62,7 +63,7 @@ pub async fn async_get_hash_for_file(path: &Path) -> Result<String, FoundationEr
 /// error occurs.
 pub async fn async_get_hash_for_file_with_meter(
     path: &Path,
-    meter: &mut ProgressMeter,
+    meter: Arc<Mutex<ProgressMeter>>,
 ) -> Result<String, FoundationError> {
     let mut file = TokioFile::open(path).await?;
     let metadata = file.metadata().await?;
@@ -75,8 +76,10 @@ pub async fn async_get_hash_for_file_with_meter(
         let bytes_read = file.read(&mut chunk[..bytes_to_read]).await?;
         left_to_read -= bytes_read as u64;
         hasher.update(&chunk[..bytes_read]);
-        meter.increment_by(bytes_read as u64);
-        meter.notify(false);
+        if let Ok(mut meter) = meter.lock() {
+            meter.increment_by(bytes_read as u64);
+            meter.notify(false);
+        }
     }
 
     Ok(hasher.finalize().to_hex().to_string())
@@ -163,7 +166,7 @@ pub async fn async_get_hash_for_dir(
 pub async fn async_get_hash_for_dir_with_meter(
     path: &Path,
     include_file_names: bool,
-    meter: &mut ProgressMeter,
+    meter: &mut Arc<Mutex<ProgressMeter>>,
 ) -> Result<String, FoundationError> {
     let mut hasher = Hasher::new();
     for entry in walkdir::WalkDir::new(path)
@@ -181,8 +184,10 @@ pub async fn async_get_hash_for_dir_with_meter(
                 let bytes_read = file.read(&mut chunk[..bytes_to_read]).await?;
                 left_to_read -= bytes_read as u64;
                 hasher.update(&chunk[..bytes_read]);
-                meter.increment_by(bytes_read as u64);
-                meter.notify(false);
+                if let Ok(mut meter) = meter.lock() {
+                    meter.increment_by(bytes_read as u64);
+                    meter.notify(false);
+                }
             }
             if include_file_names {
                 // Now add the file path to the hash. This lets us distinguish directories that
