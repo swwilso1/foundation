@@ -1,10 +1,18 @@
 //! The `progressmeter` module provides a simple progress meter for tracking the progress of a
 //! long-running task.
 
+use std::future::Future;
+use std::pin::Pin;
+
 /// The `Notifier` type is a type alias for a boxed closure that receives notifications when the
 /// progress meter makes progress towards the total goal. The value passed to the function represents
 /// the current percent completed out of 100.
-pub type Notifier = Box<dyn FnMut(u8) -> () + Send + Sync + 'static>;
+pub type Notifier = Box<
+    dyn FnMut(u8) -> Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>>
+        + Send
+        + Sync
+        + 'static,
+>;
 
 /// The `ProgressMeter` struct provides a simple progress meter for tracking the progress of a
 /// long-running task. The user provides a notification closure or function that receives notifications
@@ -32,7 +40,7 @@ impl ProgressMeter {
     /// to track of 1.
     pub fn new() -> ProgressMeter {
         ProgressMeter {
-            notifier: Box::new(|_| {}),
+            notifier: Box::new(|_| Box::pin(async {})),
             meter_total: 1,
             meter_current: 0,
             last_percent: 0,
@@ -88,14 +96,14 @@ impl ProgressMeter {
     ///
     /// * `force` - A flag indicating whether to force a notification even if the progress has not
     /// changed since the last notification.
-    pub fn notify(&mut self, force: bool) {
+    pub async fn notify(&mut self, force: bool) {
         if self.meter_current > self.meter_total {
             self.meter_current = self.meter_total;
         }
 
         let percent = ((self.meter_current as f64 / self.meter_total as f64) * 100.0) as u8;
         if percent > self.last_percent || force {
-            (self.notifier)(percent);
+            (self.notifier)(percent).await;
         }
         self.last_percent = percent;
     }
@@ -144,42 +152,45 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<u8>();
         let mut progress_meter = ProgressMeter::new_with_notifier_and_size(
             Box::new(move |percent| {
-                tx.send(percent).unwrap();
+                let tx = tx.clone();
+                Box::pin(async move {
+                    tx.send(percent).unwrap();
+                })
             }),
             100,
         );
         progress_meter.increment();
-        progress_meter.notify(false);
+        progress_meter.notify(false).await;
         assert_eq!(rx.recv().await.unwrap(), 1);
         progress_meter.increment_by(10);
-        progress_meter.notify(false);
+        progress_meter.notify(false).await;
         assert_eq!(rx.recv().await.unwrap(), 11);
         progress_meter.increment_by(10);
-        progress_meter.notify(false);
+        progress_meter.notify(false).await;
         assert_eq!(rx.recv().await.unwrap(), 21);
         progress_meter.increment_by(10);
-        progress_meter.notify(false);
+        progress_meter.notify(false).await;
         assert_eq!(rx.recv().await.unwrap(), 31);
         progress_meter.increment_by(10);
-        progress_meter.notify(false);
+        progress_meter.notify(false).await;
         assert_eq!(rx.recv().await.unwrap(), 41);
         progress_meter.increment_by(10);
-        progress_meter.notify(false);
+        progress_meter.notify(false).await;
         assert_eq!(rx.recv().await.unwrap(), 51);
         progress_meter.increment_by(10);
-        progress_meter.notify(false);
+        progress_meter.notify(false).await;
         assert_eq!(rx.recv().await.unwrap(), 61);
         progress_meter.increment_by(10);
-        progress_meter.notify(false);
+        progress_meter.notify(false).await;
         assert_eq!(rx.recv().await.unwrap(), 71);
         progress_meter.increment_by(10);
-        progress_meter.notify(false);
+        progress_meter.notify(false).await;
         assert_eq!(rx.recv().await.unwrap(), 81);
         progress_meter.increment_by(10);
-        progress_meter.notify(false);
+        progress_meter.notify(false).await;
         assert_eq!(rx.recv().await.unwrap(), 91);
         progress_meter.increment_by(10);
-        progress_meter.notify(false);
+        progress_meter.notify(false).await;
         assert_eq!(rx.recv().await.unwrap(), 100);
     }
 
@@ -188,16 +199,20 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<u8>();
         let mut progress_meter = ProgressMeter::new_with_notifier_and_size(
             Box::new(move |percent| {
-                tx.send(percent).unwrap();
+                let tx = tx.clone();
+
+                Box::pin(async move {
+                    tx.send(percent).unwrap();
+                })
             }),
             100,
         );
         progress_meter.set_current(10);
-        progress_meter.notify(false);
+        progress_meter.notify(false).await;
         assert_eq!(rx.recv().await.unwrap(), 10);
 
         progress_meter.set_current(50);
-        progress_meter.notify(false);
+        progress_meter.notify(false).await;
         assert_eq!(rx.recv().await.unwrap(), 50);
     }
 }
