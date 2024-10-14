@@ -78,7 +78,7 @@ pub async fn async_get_hash_for_file_with_meter(
         hasher.update(&chunk[..bytes_read]);
         if let Ok(mut meter) = meter.lock() {
             meter.increment_by(bytes_read as u64);
-            meter.notify(false).await;
+            meter.notify(false);
         }
     }
 
@@ -186,7 +186,7 @@ pub async fn async_get_hash_for_dir_with_meter(
                 hasher.update(&chunk[..bytes_read]);
                 if let Ok(mut meter) = meter.lock() {
                     meter.increment_by(bytes_read as u64);
-                    meter.notify(false).await;
+                    meter.notify(false);
                 }
             }
             if include_file_names {
