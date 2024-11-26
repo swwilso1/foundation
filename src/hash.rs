@@ -86,6 +86,42 @@ pub async fn async_get_hash_for_file_with_meter(
     Ok(hasher.finalize().to_hex().to_string())
 }
 
+/// Asynchronously get the hash of a set number of bytes from a file.
+///
+/// # Arguments
+///
+/// * `path` - A reference to a Path.
+/// * `size` - The number of bytes to read from the file.
+/// * `meter` - A mutable reference to a ProgressMeter.
+///
+/// # Returns
+///
+/// A Result containing the hash of the file contents in a String or a FoundationError if an
+/// error occurs.
+pub async fn get_hash_for_file_with_meter_of_bytes(
+    path: &Path,
+    size: usize,
+    meter: Arc<Mutex<ProgressMeter>>,
+) -> Result<String, FoundationError> {
+    let mut file = TokioFile::open(path).await?;
+    let mut chunk = vec![0u8; CHUNK_SIZE];
+    let mut hasher = Hasher::new();
+
+    let mut left_to_read = size;
+    while left_to_read > 0 {
+        let bytes_to_read = std::cmp::min(CHUNK_SIZE, left_to_read);
+        let bytes_read = file.read(&mut chunk[..bytes_to_read]).await?;
+        left_to_read -= bytes_read;
+        hasher.update(&chunk[..bytes_read]);
+        if let Ok(mut meter) = meter.lock() {
+            meter.increment_by(bytes_read as u64);
+            meter.notify(false);
+        }
+    }
+
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
 /// Get the hash of a directory.
 ///
 /// # Arguments
