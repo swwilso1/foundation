@@ -4,7 +4,6 @@
 
 use crate::error::FoundationError;
 use crate::progressmeter::ProgressMeter;
-use blake3::Hasher;
 use std::fs::File as StdFile;
 use std::io::BufReader as StdBufReader;
 use std::path::Path;
@@ -13,6 +12,8 @@ use tokio::{
     fs::File as TokioFile,
     io::{AsyncReadExt, BufReader as TokioBufReader},
 };
+
+pub use blake3::Hasher;
 
 const CHUNK_SIZE: usize = 1024 * 1024;
 
