@@ -1,5 +1,10 @@
+use crate::error::FoundationError;
+use crate::progressmeter::ProgressMeter;
+use nix::unistd::fsync;
+use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use tokio::task;
 
 const BLOCKSIZE: libc::size_t = 8388608;
 
@@ -26,7 +31,7 @@ pub async fn async_copy(
     }
 
     let src_file = tokio::fs::File::open(src).await?;
-    let mut dest_file = tokio::fs::OpenOptions::new()
+    let dest_file = tokio::fs::OpenOptions::new()
         .write(true)
         .truncate(true)
         .create(true)
@@ -39,9 +44,7 @@ pub async fn async_copy(
     let metadata = src.metadata()?;
     let mut bytes_still_to_transfer = metadata.len() as libc::size_t;
 
-    task::spawn_blocking(move || {
-        let mut offset: libc::off_t = 0;
-
+    if let Err(e) = task::spawn_blocking(move || {
         while bytes_still_to_transfer > 0 {
             let bytes_to_transfer = if bytes_still_to_transfer >= BLOCKSIZE {
                 BLOCKSIZE
@@ -79,5 +82,12 @@ pub async fn async_copy(
 
         Ok(())
     })
-    .await?
+    .await
+    {
+        return Err(FoundationError::JoinError(format!(
+            "Failed to join async copy work thread: {}",
+            e
+        )));
+    }
+    Ok(())
 }
