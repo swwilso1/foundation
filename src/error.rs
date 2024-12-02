@@ -10,6 +10,12 @@ pub enum FoundationError {
     #[error("Address Parse error: {0}")]
     AddressParseError(std::net::AddrParseError),
 
+    #[error("Copy failed: {0}")]
+    CopyFailed(String),
+
+    #[error("File not found: {0:?}")]
+    FileNotFound(std::path::PathBuf),
+
     #[error("{0}")]
     GenericError(Box<dyn Error + Send + Sync + 'static>),
 
@@ -42,6 +48,9 @@ pub enum FoundationError {
 
     #[error("Serde YAML error: {0}")]
     SerdeYamlError(serde_yaml::Error),
+
+    #[error("Sync error: {0}")]
+    SyncError(String),
 
     #[error("Thread task error: {0}")]
     ThreadTaskError(String),
