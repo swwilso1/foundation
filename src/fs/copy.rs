@@ -1,6 +1,5 @@
 use crate::error::FoundationError;
 use crate::progressmeter::ProgressMeter;
-use log::debug;
 use nix::unistd::fsync;
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
@@ -33,10 +32,8 @@ pub fn copy(
 
     // Get the number of bytes in the source file.
     let mut src_bytes = std::fs::metadata(src)?.len();
-    debug!("Source file has {} bytes", src_bytes);
 
     // Create the destination file.
-    debug!("Opening destination file: {:?}", dest);
     let mut dest_file = std::fs::OpenOptions::new()
         .write(true)
         .truncate(true)
@@ -47,40 +44,29 @@ pub fn copy(
     // the data is written to disk.
     let dest_fd = dest_file.as_raw_fd();
 
-    debug!("Opening source file: {:?}", src);
     let mut src_file = std::fs::File::open(src)?;
 
     while src_bytes > 0 {
         let mut buffer = vec![0u8; BLOCKSIZE];
         let bytes_read = src_file.read(&mut buffer)?;
-        debug!("Read {} bytes from source file", bytes_read);
         if bytes_read == 0 && src_bytes > 0 {
             continue;
         }
 
-        debug!("Writing {} bytes to destination file", bytes_read);
         dest_file.write_all(&buffer[..bytes_read])?;
         dest_file.flush()?;
 
-        debug!("Notifying progress meter");
         if let Some(meter) = &meter {
-            debug!("Have a progress meter");
             if let Ok(mut meter) = meter.lock() {
-                debug!("Incrementing progress meter by {} bytes", bytes_read);
                 meter.increment_by(bytes_read as u64);
                 meter.notify(false);
             }
         }
 
-        debug!(
-            "Decrementing source file byte count by {} bytes",
-            bytes_read
-        );
         src_bytes -= bytes_read as u64;
     }
 
     // Make sure to sync the writes to the destination.
-    debug!("Syncing destination file");
     if let Err(e) = fsync(dest_fd) {
         return Err(FoundationError::SyncError(format!(
             "Failed to sync data: {}",
