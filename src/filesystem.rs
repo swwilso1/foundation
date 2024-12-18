@@ -131,8 +131,9 @@ pub fn filesystem_is_mountable(fs: FileSystem) -> bool {
         | FileSystem::Fat32
         | FileSystem::ExFat
         | FileSystem::ISO9660
-        | FileSystem::CIFS => true,
-        FileSystem::NTFS | FileSystem::HFSPlus | FileSystem::APFS => false,
+        | FileSystem::CIFS
+        | FileSystem::NTFS => true,
+        FileSystem::HFSPlus | FileSystem::APFS => false,
     }
 }
 
