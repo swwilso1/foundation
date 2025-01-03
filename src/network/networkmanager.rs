@@ -276,7 +276,8 @@ impl NetworkManager {
                 let platform_id = PlatformId::new();
 
                 if platform_id.name == "Ubuntu" &&
-                    platform_id.processor_architecture == ProcessorArchitecture::X86_64 {
+                    (platform_id.processor_architecture == ProcessorArchitecture::X86_64 ||
+                        platform_id.processor_architecture == ProcessorArchitecture::ARM64) {
 
                     // Find the .yaml netplan files.
                     let netplan_yaml_files = match std::fs::read_dir(NETPLAN_DIR) {
