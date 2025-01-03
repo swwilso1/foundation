@@ -167,7 +167,10 @@ cfg_if! {
                             let version_string = parts[1].trim();
 
                             let s = match vendor.as_str() {
-                                "Ubuntu" => format!("{}.0", version_string),
+                                "Ubuntu" => {
+                                    let stripped = version_string.replace('0',"");
+                                    format!("{}.0", stripped)
+                                }
                                 _ => version_string.to_string(),
                             };
 
