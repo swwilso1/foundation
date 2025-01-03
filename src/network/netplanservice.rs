@@ -14,6 +14,7 @@ use serde::{Deserialize, Serializer};
 use serde_yaml::Value;
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 /// The service object.
@@ -404,10 +405,7 @@ impl NetworkService for NetplanService {
                             ethernets_map.serialize_key(&config.interface.name)?;
                             let mut inner_map = ethernets_map.serialize_map(None)?;
                             if config.address_mode == AddressMode::DHCP {
-                                inner_map.serialize_entry(
-                                    "dhcp4",
-                                    &format!("{}", config.address_mode),
-                                )?;
+                                inner_map.serialize_entry("dhcp4", &true)?;
                             } else {
                                 // Need to write out static addresses.
                                 inner_map.serialize_key("addresses")?;
@@ -484,6 +482,13 @@ impl NetworkService for NetplanService {
                 SerializeMap::end(network_map)?;
 
                 serializer.flush()?;
+
+                let metadata = file.metadata()?;
+                let mut permissions = metadata.permissions();
+
+                // Set the permissions.
+                permissions.set_mode(0o400);
+                std::fs::set_permissions(&self.filename, permissions)?;
 
                 Ok(())
             }
