@@ -110,6 +110,7 @@ impl KeyValueConfigFile {
         match OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(true)
             .open(&self.filename)
         {
             Ok(mut file) => {
