@@ -90,6 +90,14 @@ impl NetworkService for HostAPDService {
                 wifi_config.wpa_mode = wpa_mode_str.parse()?;
             }
 
+            if let Some(ieee80211n_str) = configuration.get("ieee80211n") {
+                wifi_config.ieee802111n = ieee80211n_str.parse()? == 1;
+            }
+
+            if let Some(wmm_enabled_str) = configuration.get("wmm_enabled") {
+                wifi_config.wmm_enabled = wmm_enabled_str.parse()? == 1;
+            }
+
             if let Some(wpa_key_mgmt_str) = configuration.get("wpa_key_mgmt") {
                 wifi_config.wpa_key_mgmt = Some(wpa_key_mgmt_str.to_string());
             }
@@ -140,6 +148,12 @@ impl NetworkService for HostAPDService {
                 value_map.insert("auth_algs".to_string(), "1".to_string());
                 value_map.insert("ignore_broadcast_ssid".to_string(), "0".to_string());
                 value_map.insert("wpa".to_string(), wifi_config.wpa_mode.to_string());
+                if wifi_config.ieee802111n {
+                    value_map.insert("ieee80211n".to_string(), "1".to_string());
+                }
+                if wifi_config.wmm_enabled {
+                    value_map.insert("wmm_enabled".to_string(), "1".to_string());
+                }
                 if let Some(password_str) = &wifi_config.password {
                     value_map.insert("wpa_passphrase".to_string(), password_str.clone());
                 }

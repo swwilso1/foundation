@@ -41,6 +41,12 @@ pub struct WirelessConfiguration {
     /// The WPA mode of the wireless network.
     pub wpa_mode: u32,
 
+    /// The IEEE 802.11n setting of the wireless network.
+    pub ieee802111n: bool,
+
+    /// The WMM enabled setting of the wireless network.
+    pub wmm_enabled: bool,
+
     /// The WPA key management setting of the wireless network.
     pub wpa_key_mgmt: Option<String>,
 
@@ -74,6 +80,8 @@ impl WirelessConfiguration {
             password: None,
             channel: 1,
             wpa_mode: 1,
+            ieee802111n: false,
+            wmm_enabled: false,
             wpa_key_mgmt: None,
             wpa_pairwise: None,
             rsn_pairwise: None,
@@ -100,6 +108,8 @@ impl WirelessConfiguration {
         password: Option<String>,
         channel: u32,
         wpa_mode: u32,
+        ieee802111n: bool,
+        wmm_enabled: bool,
         wpa_key_mgmt: Option<String>,
         wpa_pairwise: Option<String>,
         rsn_pairwise: Option<String>,
@@ -111,6 +121,8 @@ impl WirelessConfiguration {
             password,
             channel,
             wpa_mode,
+            ieee802111n,
+            wmm_enabled,
             wpa_key_mgmt,
             wpa_pairwise,
             rsn_pairwise,
