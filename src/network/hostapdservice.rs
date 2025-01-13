@@ -91,11 +91,11 @@ impl NetworkService for HostAPDService {
             }
 
             if let Some(ieee80211n_str) = configuration.get("ieee80211n") {
-                wifi_config.ieee802111n = ieee80211n_str.parse()? == 1;
+                wifi_config.ieee802111n = ieee80211n_str == "1";
             }
 
             if let Some(wmm_enabled_str) = configuration.get("wmm_enabled") {
-                wifi_config.wmm_enabled = wmm_enabled_str.parse()? == 1;
+                wifi_config.wmm_enabled = wmm_enabled_str == "2";
             }
 
             if let Some(wpa_key_mgmt_str) = configuration.get("wpa_key_mgmt") {
