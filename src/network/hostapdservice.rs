@@ -91,7 +91,7 @@ impl NetworkService for HostAPDService {
             }
 
             if let Some(ieee80211n_str) = configuration.get("ieee80211n") {
-                wifi_config.ieee802111n = ieee80211n_str == "1";
+                wifi_config.ieee80211n = ieee80211n_str == "1";
             }
 
             if let Some(wmm_enabled_str) = configuration.get("wmm_enabled") {
@@ -148,7 +148,7 @@ impl NetworkService for HostAPDService {
                 value_map.insert("auth_algs".to_string(), "1".to_string());
                 value_map.insert("ignore_broadcast_ssid".to_string(), "0".to_string());
                 value_map.insert("wpa".to_string(), wifi_config.wpa_mode.to_string());
-                if wifi_config.ieee802111n {
+                if wifi_config.ieee80211n {
                     value_map.insert("ieee80211n".to_string(), "1".to_string());
                 }
                 if wifi_config.wmm_enabled {
