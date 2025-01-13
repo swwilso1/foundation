@@ -95,7 +95,7 @@ impl NetworkService for HostAPDService {
             }
 
             if let Some(wmm_enabled_str) = configuration.get("wmm_enabled") {
-                wifi_config.wmm_enabled = wmm_enabled_str == "2";
+                wifi_config.wmm_enabled = wmm_enabled_str == "1";
             }
 
             if let Some(wpa_key_mgmt_str) = configuration.get("wpa_key_mgmt") {
