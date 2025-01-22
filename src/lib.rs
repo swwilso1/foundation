@@ -15,6 +15,7 @@ pub mod filesystem;
 pub mod filesystem_monitor;
 pub mod fs;
 pub mod hash;
+pub mod interrupter;
 pub mod keyvalueconfigfile;
 pub mod multiqueue;
 pub mod network;
