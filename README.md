@@ -33,6 +33,7 @@ is not supported at this time.
 - **`foundation::filesystem`**: Types for representing file systems.
 - **`foundation::filesystem_monitor`**: Monitor file system changes.
 - **`foundation::hash`**: Utilities for hashing file and directory contents.
+- **`foundation::interrupter`**: A mechanism for interrupting long-running tasks.
 - **`foundation::keyvalueconfigfile`**: Read and write key-value configuration files.
 - **`foundation::multiqueue`**: A multi-producer, multi-consumer queue.
 - **`foundation::network`**: Network utilities for managing network interfaces.
