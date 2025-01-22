@@ -14,6 +14,8 @@ pub enum Interruption {
     Abort,
 }
 
+/// The `Interrupter` struct is used to manage interruptions.
+#[derive(Debug, Clone)]
 pub struct Interrupter {
     /// The current interruption state.
     interruption: Option<Interruption>,
