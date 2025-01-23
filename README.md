@@ -20,7 +20,7 @@ tokio = { version = "1", features = ["full", "fs", "io-util", "net"] }
 ```
 
 Foundation will currently build using the stable version of Rust and has the most platform
-support on Linux. It will also buildon macOS, but some features may not be available. Windows
+support on Linux. It will also build on macOS, but some features may not be available. Windows
 is not supported at this time.
 
 ## Features
