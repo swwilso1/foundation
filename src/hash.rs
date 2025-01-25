@@ -5,7 +5,6 @@
 use crate::error::FoundationError;
 use crate::progressmeter::ProgressMeter;
 use std::fs::File as StdFile;
-use std::io::BufReader as StdBufReader;
 use std::io::Read;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -18,25 +17,7 @@ pub use blake3::Hasher;
 
 const CHUNK_SIZE: usize = 1024 * 1024;
 
-/// Get the hash of a file.
-///
-/// # Arguments
-///
-/// * `path` - A reference to a Path.
-///
-/// # Returns
-///
-/// A Result containing a string. If the file is successfully hashed, the result will be `Ok(String)`.
-/// If an error occurs, the result will be a FoundationError.
-pub fn get_hash_for_file(path: &Path) -> Result<String, FoundationError> {
-    let file = StdFile::open(path)?;
-    let mut reader = StdBufReader::new(file);
-    let mut hasher = Hasher::new();
-    std::io::copy(&mut reader, &mut hasher)?;
-    Ok(hasher.finalize().to_hex().to_string())
-}
-
-/// Get the hash of a file, reporting progress to a ProgressMeter.
+/// Get the hash of a file, optionally reporting progress to a ProgressMeter.
 ///
 /// # Arguments
 ///
@@ -46,9 +27,9 @@ pub fn get_hash_for_file(path: &Path) -> Result<String, FoundationError> {
 /// # Returns
 ///
 /// A Result containing a string. If the file is successfully hashed, the result will be `Ok(String)`.
-pub fn get_hash_for_file_with_meter(
+pub fn get_hash_for_file(
     path: &Path,
-    meter: Arc<Mutex<ProgressMeter>>,
+    meter: Option<Arc<Mutex<ProgressMeter>>>,
 ) -> Result<String, FoundationError> {
     let mut file = StdFile::open(path)?;
     let metadata = file.metadata()?;
@@ -61,9 +42,11 @@ pub fn get_hash_for_file_with_meter(
         let bytes_read = file.read(&mut chunk[..bytes_to_read])?;
         left_to_read -= bytes_read as u64;
         hasher.update(&chunk[..bytes_read]);
-        if let Ok(mut meter) = meter.lock() {
-            meter.increment_by(bytes_read as u64);
-            meter.notify(false);
+        if let Some(meter) = &meter {
+            if let Ok(mut meter) = meter.lock() {
+                meter.increment_by(bytes_read as u64);
+                meter.notify(false);
+            }
         }
     }
 
@@ -158,37 +141,6 @@ pub async fn get_hash_for_file_with_meter_of_bytes(
     Ok(hasher.finalize().to_hex().to_string())
 }
 
-/// Get the hash of a directory.
-///
-/// # Arguments
-///
-/// * `path` - A reference to a Path.
-///
-/// # Returns
-///
-/// A Result containing a string. If the directory is successfully hashed, the result will be `Ok(String)`.
-pub fn get_hash_for_dir(path: &Path, include_file_names: bool) -> Result<String, FoundationError> {
-    let mut hasher = Hasher::new();
-    for entry in walkdir::WalkDir::new(path)
-        .min_depth(1)
-        .sort_by(|a, b| a.file_name().cmp(b.file_name()))
-    {
-        let entry = entry?;
-        if entry.file_type().is_file() {
-            let file = StdFile::open(entry.path())?;
-            let mut reader = StdBufReader::new(file);
-            std::io::copy(&mut reader, &mut hasher)?;
-            if include_file_names {
-                // Now add the file path to the hash. This lets us distinguish directories that
-                // have identical contents, but the different file names.
-                let file_path = entry.path().display().to_string();
-                hasher.update(file_path.as_bytes());
-            }
-        }
-    }
-    Ok(hasher.finalize().to_hex().to_string())
-}
-
 /// Get the hash of a directory with a progress meter.
 ///
 /// # Arguments
@@ -201,10 +153,10 @@ pub fn get_hash_for_dir(path: &Path, include_file_names: bool) -> Result<String,
 ///
 /// A Result containing the hash of the directory contents in a String or a FoundationError if an
 /// error occurs.
-pub fn get_hash_for_dir_with_meter(
+pub fn get_hash_for_dir(
     path: &Path,
     include_file_names: bool,
-    meter: Arc<Mutex<ProgressMeter>>,
+    meter: Option<Arc<Mutex<ProgressMeter>>>,
 ) -> Result<String, FoundationError> {
     let mut hasher = Hasher::new();
     for entry in walkdir::WalkDir::new(path)
@@ -222,9 +174,11 @@ pub fn get_hash_for_dir_with_meter(
                 let bytes_read = file.read(&mut chunk[..bytes_to_read])?;
                 left_to_read -= bytes_read as u64;
                 hasher.update(&chunk[..bytes_read]);
-                if let Ok(mut meter) = meter.lock() {
-                    meter.increment_by(bytes_read as u64);
-                    meter.notify(false);
+                if let Some(meter) = &meter {
+                    if let Ok(mut meter) = meter.lock() {
+                        meter.increment_by(bytes_read as u64);
+                        meter.notify(false);
+                    }
                 }
             }
             if include_file_names {
