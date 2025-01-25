@@ -6,6 +6,7 @@ use crate::error::FoundationError;
 use crate::progressmeter::ProgressMeter;
 use std::fs::File as StdFile;
 use std::io::BufReader as StdBufReader;
+use std::io::Read;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::{
@@ -26,11 +27,46 @@ const CHUNK_SIZE: usize = 1024 * 1024;
 /// # Returns
 ///
 /// A Result containing a string. If the file is successfully hashed, the result will be `Ok(String)`.
+/// If an error occurs, the result will be a FoundationError.
 pub fn get_hash_for_file(path: &Path) -> Result<String, FoundationError> {
     let file = StdFile::open(path)?;
     let mut reader = StdBufReader::new(file);
     let mut hasher = Hasher::new();
     std::io::copy(&mut reader, &mut hasher)?;
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
+/// Get the hash of a file, reporting progress to a ProgressMeter.
+///
+/// # Arguments
+///
+/// * `path` - A reference to a Path.
+/// * `meter` - An optional reference to a ProgressMeter.
+///
+/// # Returns
+///
+/// A Result containing a string. If the file is successfully hashed, the result will be `Ok(String)`.
+pub fn get_hash_for_file_with_meter(
+    path: &Path,
+    meter: Arc<Mutex<ProgressMeter>>,
+) -> Result<String, FoundationError> {
+    let mut file = StdFile::open(path)?;
+    let metadata = file.metadata()?;
+    let mut chunk = vec![0u8; CHUNK_SIZE];
+    let mut hasher = Hasher::new();
+
+    let mut left_to_read = metadata.len();
+    while left_to_read > 0 {
+        let bytes_to_read = std::cmp::min(CHUNK_SIZE as u64, left_to_read) as usize;
+        let bytes_read = file.read(&mut chunk[..bytes_to_read])?;
+        left_to_read -= bytes_read as u64;
+        hasher.update(&chunk[..bytes_read]);
+        if let Ok(mut meter) = meter.lock() {
+            meter.increment_by(bytes_read as u64);
+            meter.notify(false);
+        }
+    }
+
     Ok(hasher.finalize().to_hex().to_string())
 }
 
@@ -142,6 +178,55 @@ pub fn get_hash_for_dir(path: &Path, include_file_names: bool) -> Result<String,
             let file = StdFile::open(entry.path())?;
             let mut reader = StdBufReader::new(file);
             std::io::copy(&mut reader, &mut hasher)?;
+            if include_file_names {
+                // Now add the file path to the hash. This lets us distinguish directories that
+                // have identical contents, but the different file names.
+                let file_path = entry.path().display().to_string();
+                hasher.update(file_path.as_bytes());
+            }
+        }
+    }
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
+/// Get the hash of a directory with a progress meter.
+///
+/// # Arguments
+///
+/// * `path` - A reference to a Path.
+/// * `include_file_names` - A boolean indicating whether to include file names in the hash.
+/// * `meter` - A mutable reference to a ProgressMeter.
+///
+/// # Returns
+///
+/// A Result containing the hash of the directory contents in a String or a FoundationError if an
+/// error occurs.
+pub fn get_hash_for_dir_with_meter(
+    path: &Path,
+    include_file_names: bool,
+    meter: Arc<Mutex<ProgressMeter>>,
+) -> Result<String, FoundationError> {
+    let mut hasher = Hasher::new();
+    for entry in walkdir::WalkDir::new(path)
+        .min_depth(1)
+        .sort_by(|a, b| a.file_name().cmp(b.file_name()))
+    {
+        let entry = entry?;
+        if entry.file_type().is_file() {
+            let mut file = StdFile::open(entry.path())?;
+            let metadata = file.metadata()?;
+            let mut chunk = vec![0u8; CHUNK_SIZE];
+            let mut left_to_read = metadata.len();
+            while left_to_read > 0 {
+                let bytes_to_read = std::cmp::min(CHUNK_SIZE as u64, left_to_read) as usize;
+                let bytes_read = file.read(&mut chunk[..bytes_to_read])?;
+                left_to_read -= bytes_read as u64;
+                hasher.update(&chunk[..bytes_read]);
+                if let Ok(mut meter) = meter.lock() {
+                    meter.increment_by(bytes_read as u64);
+                    meter.notify(false);
+                }
+            }
             if include_file_names {
                 // Now add the file path to the hash. This lets us distinguish directories that
                 // have identical contents, but the different file names.
