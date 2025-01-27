@@ -29,6 +29,7 @@ is not supported at this time.
 - **`foundation::constants`**: Common constants.
 - **`foundation::defer`**: Defer execution of a closure until the end of the current scope.
 - **`foundation::delayed_handler`**: A mechanism for scheduling execution after some delay period.
+- **`foundation::dir_hasher`**: Efficiently compute the hashes of directories.
 - **`foundation::error`**: Module error values.
 - **`foundation::filesystem`**: Types for representing file systems.
 - **`foundation::filesystem_monitor`**: Monitor file system changes.
