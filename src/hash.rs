@@ -187,6 +187,13 @@ pub fn get_hash_for_dir(
                 let file_path = entry.path().display().to_string();
                 hasher.update(file_path.as_bytes());
             }
+        } else if entry.file_type().is_dir() {
+            if include_file_names {
+                // Now add the directory path to the hash. This lets us distinguish directories that
+                // have identical contents, but the different directory names.
+                let dir_path = entry.path().display().to_string();
+                hasher.update(dir_path.as_bytes());
+            }
         }
     }
     Ok(hasher.finalize().to_hex().to_string())
