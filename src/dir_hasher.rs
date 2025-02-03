@@ -102,6 +102,7 @@ impl DirHasher {
             "path": self.path.display().to_string(),
             "hash": self.hash(),
             "children": children,
+            "type": "dir",
         })
     }
 }
