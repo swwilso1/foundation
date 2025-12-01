@@ -35,7 +35,7 @@ impl<T> Protected<T> {
     /// # Returns
     ///
     /// A `MutexGuard<T>` that allows access to the protected item.
-    pub fn lock(&self) -> MutexGuard<T> {
+    pub fn lock(&self) -> MutexGuard<'_, T> {
         self.item.lock().unwrap()
     }
 }

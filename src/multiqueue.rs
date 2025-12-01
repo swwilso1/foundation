@@ -605,7 +605,7 @@ impl<T> MultiQueue<T> {
     }
 
     /// The `iter` function returns an iterator over the elements in the queue.
-    pub fn iter(&mut self) -> MultiQueueIterator<T> {
+    pub fn iter(&mut self) -> MultiQueueIterator<'_, T> {
         MultiQueueIterator::new(self)
     }
 }
