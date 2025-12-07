@@ -25,9 +25,9 @@ pub mod wireless;
 
 cfg_if! {
     if #[cfg(target_os = "linux")] {
-        mod dhcpcdservice;
-        mod dnsmasqservice;
-        mod hostapdservice;
-        mod netplanservice;
+        pub mod dhcpcdservice;
+        pub mod dnsmasqservice;
+        pub mod hostapdservice;
+        pub mod netplanservice;
     }
 }
