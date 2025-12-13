@@ -442,6 +442,15 @@ impl NetworkInterface {
             vec![]
         }
     }
+
+    /// Set the name of the network interface.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The new name of the network interface.
+    pub fn set_name(&mut self, name: &str) {
+        self.name = name.to_string();
+    }
 }
 
 impl From<network_interface::NetworkInterface> for NetworkInterface {

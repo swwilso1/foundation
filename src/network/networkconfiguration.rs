@@ -125,6 +125,11 @@ impl NetworkConfiguration {
         self.interface.name.clone()
     }
 
+    /// Set the name of the network interface.
+    pub fn set_name(&mut self, name: &str) {
+        self.interface.set_name(name);
+    }
+
     /// Return whether the network interface is wireless.
     pub fn is_wireless_enabled(&self) -> bool {
         let (tx, rx) = std::sync::mpsc::channel::<bool>();
