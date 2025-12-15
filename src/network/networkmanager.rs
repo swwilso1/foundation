@@ -170,6 +170,17 @@ impl NetworkManager {
             .map(|c| c.get_name())
     }
 
+    /// Add a network configuration with the specified name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the network configuration to set.
+    /// * `configuration` - The network configuration to set.
+    pub fn set_configuration(&mut self, name: &str, configuration: &NetworkConfiguration) {
+        self.configurations
+            .insert(name.to_string(), configuration.clone());
+    }
+
     /// Remove all the network configurations from the manager.
     pub fn clear(&mut self) {
         self.configurations.clear();
