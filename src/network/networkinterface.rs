@@ -26,6 +26,9 @@ pub struct NetworkInterface {
 
     /// The gateway addresses of the network interface.
     pub gateway_addresses: Vec<IpAddr>,
+
+    /// The exists flag indicates if the interface exists on the system.
+    pub exists: bool,
 }
 
 impl NetworkInterface {
@@ -39,6 +42,7 @@ impl NetworkInterface {
             index: 0,
             nameserver_addresses: vec![],
             gateway_addresses: vec![],
+            exists: false,
         }
     }
 
@@ -61,6 +65,7 @@ impl NetworkInterface {
         index: u32,
         nameserver_addresses: Vec<IpAddr>,
         gateway_addresses: Vec<IpAddr>,
+        exists: bool,
     ) -> Self {
         NetworkInterface {
             name: name.to_string(),
@@ -69,6 +74,7 @@ impl NetworkInterface {
             index,
             nameserver_addresses,
             gateway_addresses,
+            exists,
         }
     }
 
@@ -78,7 +84,7 @@ impl NetworkInterface {
     ///
     /// * `name` - The name of the network interface.
     pub fn new_with_name(name: &str) -> Self {
-        NetworkInterface::new(name, vec![], None, 0, vec![], vec![])
+        NetworkInterface::new(name, vec![], None, 0, vec![], vec![], false)
     }
 
     /// Remove all settings for the current interface except the name.
@@ -468,6 +474,7 @@ impl From<network_interface::NetworkInterface> for NetworkInterface {
             index: value.index,
             nameserver_addresses: vec![],
             gateway_addresses: vec![],
+            exists: true,
         }
     }
 }
@@ -486,6 +493,7 @@ mod tests {
         assert_eq!(interface.index, 0);
         assert_eq!(interface.nameserver_addresses, Vec::<IpAddr>::new());
         assert_eq!(interface.gateway_addresses, Vec::<IpAddr>::new());
+        assert_eq!(interface.exists, false);
     }
 
     #[test]
@@ -511,6 +519,7 @@ mod tests {
         assert_eq!(interface.index, 0);
         assert_eq!(interface.nameserver_addresses, Vec::<IpAddr>::new());
         assert_eq!(interface.gateway_addresses, Vec::<IpAddr>::new());
+        assert_eq!(interface.exists, false);
     }
 
     #[test]

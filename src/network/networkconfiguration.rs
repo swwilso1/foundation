@@ -150,6 +150,11 @@ impl NetworkConfiguration {
         let result = rx.recv().unwrap();
         result || self.wifi_configuration.is_some()
     }
+
+    /// Return whether the network interface exists on the system.
+    pub fn exists(&self) -> bool {
+        self.interface.exists
+    }
 }
 
 impl FromStr for AddressMode {
