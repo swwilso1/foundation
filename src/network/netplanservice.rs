@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use std::process::Command;
 
 /// The service object.
 pub struct NetplanService {
@@ -496,21 +497,33 @@ impl NetworkService for NetplanService {
         }
     }
 
+    // Technically, netplan is not a service or daemon, but a configuration generator that converts
+    // yaml files into configs for a backend renderer like systemd-networkd or NetworkManager. As
+    // such we are not really starting or stopping the actual network layer, but rather applying
+    // the configuration changes.
+
     /// Return the path to the service configuration file.
     fn get_configuration_file(&self) -> PathBuf {
         return self.filename.clone();
     }
 
     fn start(&self) -> Result<(), FoundationError> {
-        self.service.start()
+        let output = Command::new("/usr/sbin/netplan").arg("apply").output()?;
+        if !output.status.success() {
+            return Err(FoundationError::OperationFailed(format!(
+                "Failed to start service: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
+        }
+        Ok(())
     }
 
     fn stop(&self) -> Result<(), FoundationError> {
-        self.service.stop()
+        Ok(())
     }
 
     fn restart(&self) -> Result<(), FoundationError> {
-        self.service.restart()
+        self.start()
     }
 }
 
