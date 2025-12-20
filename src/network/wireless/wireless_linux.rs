@@ -20,11 +20,11 @@ async fn is_wireless_interface_netlink(name: &str) -> Result<bool, FoundationErr
     let (connection, handle, _) = new_connection()?;
     tokio::spawn(connection);
 
-    let mut interfaces = handle.interface().get().execute().await;
+    let mut interfaces = handle.interface().get(vec![Nl80211Attr::IfName(name.to_string())]).execute().await;
     while let Ok(Some(interface)) = interfaces.try_next().await {
         if !interface
             .payload
-            .nlas
+            .attributes
             .iter()
             .any(|nla| matches!(nla, Nl80211Attr::IfName(n) if n == name))
         {
