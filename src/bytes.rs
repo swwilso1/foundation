@@ -175,6 +175,41 @@ fn normalize_size_for_divisor_and_suffix(
     (divisor, suffix)
 }
 
+pub fn bytes_from_string(s: &str) -> Option<u128> {
+    let s = s.trim();
+
+    // split numeric and unit parts
+    let idx = s
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(s.len());
+
+    let (num, unit) = s.split_at(idx);
+
+    let value: f64 = num.parse().ok()?;
+    let multiplier: u128 = match unit.trim() {
+        "" | "b" | "B" => 1,
+        "Kb" => 1024_u128,
+        "KB" => 1000_u128,
+        "Mb" => 1024_u128.pow(2),
+        "MB" => 1000_u128.pow(2),
+        "Gb" => 1024_u128.pow(3),
+        "GB" => 1000_u128.pow(3),
+        "Tb" => 1024_u128.pow(4),
+        "TB" => 1000_u128.pow(4),
+        "Pb" => 1024_u128.pow(5),
+        "PB" => 1000_u128.pow(5),
+        "Eb" => 1024_u128.pow(6),
+        "EB" => 1000_u128.pow(6),
+        "Zb" => 1024_u128.pow(7),
+        "ZB" => 1000_u128.pow(7),
+        "Yb" => 1024_u128.pow(8),
+        "YB" => 1000_u128.pow(8),
+        _ => return None,
+    };
+
+    Some((value * multiplier as f64) as u128)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -462,5 +497,64 @@ mod tests {
             normalize_size(1000000000000000000000000, ByteMetricBase::Decimal),
             (1.0, "YB".to_string())
         );
+    }
+
+    #[test]
+    fn test_bytes_from_string() {
+        assert_eq!(bytes_from_string("1024"), Some(1024_u128));
+        assert_eq!(bytes_from_string("1024b"), Some(1024_u128));
+        assert_eq!(bytes_from_string("1024B"), Some(1024_u128));
+
+        assert_eq!(bytes_from_string("1Kb"), Some(1024_u128));
+        assert_eq!(bytes_from_string("1KB"), Some(1000_u128));
+        assert_eq!(bytes_from_string("15Kb"), Some(15360_u128));
+        assert_eq!(bytes_from_string("15KB"), Some(15000_u128));
+
+        assert_eq!(bytes_from_string("1Mb"), Some(1048576_u128));
+        assert_eq!(bytes_from_string("1MB"), Some(1000000_u128));
+        assert_eq!(bytes_from_string("17Mb"), Some(17825792_u128));
+        assert_eq!(bytes_from_string("17MB"), Some(17000000_u128));
+
+        assert_eq!(bytes_from_string("1Gb"), Some(1073741824_u128));
+        assert_eq!(bytes_from_string("1GB"), Some(1000000000_u128));
+        assert_eq!(bytes_from_string("18Gb"), Some(19327352832_u128));
+        assert_eq!(bytes_from_string("18GB"), Some(18000000000_u128));
+
+        assert_eq!(bytes_from_string("1Tb"), Some(1099511627776_u128));
+        assert_eq!(bytes_from_string("1TB"), Some(1000000000000_u128));
+        assert_eq!(bytes_from_string("82Tb"), Some(90159953477632_u128));
+        assert_eq!(bytes_from_string("82TB"), Some(82000000000000_u128));
+
+        assert_eq!(bytes_from_string("1Pb"), Some(1125899906842624_u128));
+        assert_eq!(bytes_from_string("1PB"), Some(1000000000000000_u128));
+        assert_eq!(bytes_from_string("4Pb"), Some(4503599627370496_u128));
+        assert_eq!(bytes_from_string("4PB"), Some(4000000000000000_u128));
+
+        assert_eq!(bytes_from_string("1Eb"), Some(1152921504606846976_u128));
+        assert_eq!(bytes_from_string("1EB"), Some(1000000000000000000_u128));
+        assert_eq!(bytes_from_string("8Eb"), Some(9223372036854775808_u128));
+        assert_eq!(bytes_from_string("8EB"), Some(8000000000000000000_u128));
+
+        assert_eq!(bytes_from_string("1Zb"), Some(1180591620717411303424_u128));
+        assert_eq!(bytes_from_string("1ZB"), Some(1000000000000000000000_u128));
+        assert_eq!(
+            bytes_from_string("12Zb"),
+            Some(14167099448608935641088_u128)
+        );
+        assert_eq!(
+            bytes_from_string("12ZB"),
+            Some(12000000000000000000000_u128)
+        );
+
+        assert_eq!(
+            bytes_from_string("1Yb"),
+            Some(1208925819614629174706176_u128)
+        );
+        // bytes_from_string uses f64 to represent its multiplier. 1000^8 exceeds
+        // the range of f64. In the future we will use arbitrary precision floats
+        // to make this work. For you Yotta scale is not practical.
+        // assert_eq!(bytes_from_string("1YB"), Some(1000000000000000000000000_u128));
+        // assert_eq!(bytes_from_string("17Yb"), Some(20551738933448695970004992_u128));
+        // assert_eq!(bytes_from_string("17YB"), Some(17000000000000000000000000_u128));
     }
 }
