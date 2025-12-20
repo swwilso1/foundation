@@ -20,7 +20,7 @@ async fn is_wireless_interface_netlink(name: &str) -> Result<bool, FoundationErr
     let (connection, handle, _) = new_connection()?;
     tokio::spawn(connection);
 
-    let mut interfaces = handle.interface().get(vec![Nl80211Attr::IfName(name.to_string())]).execute().await;
+    let mut interfaces = handle.interface().get(vec![]).execute().await;
     while let Ok(Some(interface)) = interfaces.try_next().await {
         if !interface
             .payload
@@ -63,6 +63,7 @@ mod tests {
         let interfaces = NetworkInterface::show().unwrap();
         let mut found_wireless = false;
         for interface in interfaces {
+            println!("{}", interface.name);
             if is_wireless_interface(&interface.name).await {
                 found_wireless = true;
                 break;
