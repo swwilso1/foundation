@@ -26,9 +26,7 @@ pub struct NetplanService {
 impl NetplanService {
     /// Create a new NetplanService object.
     pub fn new(filename: PathBuf) -> NetplanService {
-        NetplanService {
-            filename,
-        }
+        NetplanService { filename }
     }
 }
 
