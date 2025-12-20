@@ -7,7 +7,6 @@ use crate::network::ipaddrquery::IpAddrQuery;
 use crate::network::networkconfiguration::{AddressMode, NetworkConfiguration};
 use crate::network::networkservice::NetworkService;
 use crate::network::wireless::configuration::{WirelessConfiguration, WirelessMode};
-use crate::systemctlservice::SystemCTLService;
 use log::{debug, error};
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Serializer};
@@ -22,7 +21,6 @@ use std::process::Command;
 pub struct NetplanService {
     /// The path to the configuration file.
     filename: PathBuf,
-    service: SystemCTLService,
 }
 
 impl NetplanService {
@@ -30,7 +28,6 @@ impl NetplanService {
     pub fn new(filename: PathBuf) -> NetplanService {
         NetplanService {
             filename,
-            service: SystemCTLService::new("netplan".to_string()),
         }
     }
 }
