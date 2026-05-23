@@ -3,6 +3,7 @@ use crate::fs::copy::sync;
 use crate::progressmeter::ProgressMeter;
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use tokio::task;
 
@@ -49,6 +50,9 @@ where
     let metadata = src.metadata()?;
     let mut bytes_still_to_transfer = metadata.len() as libc::size_t;
 
+    let aborted = Arc::new(AtomicBool::new(false));
+    let aborted_copy = aborted.clone();
+
     if let Err(e) = task::spawn_blocking(move || {
         while bytes_still_to_transfer > 0 {
             let bytes_to_transfer = if bytes_still_to_transfer >= BLOCKSIZE {
@@ -77,6 +81,7 @@ where
             }
 
             if aborter() {
+                aborted_copy.store(true, std::sync::atomic::Ordering::SeqCst);
                 sync(dest_fd)?;
                 return Err(FoundationError::AbortError("Operation aborted".to_string()));
             }
@@ -93,6 +98,11 @@ where
             e
         )));
     }
+
+    if aborted.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err(FoundationError::AbortError("Operation aborted".to_string()));
+    }
+
     Ok(())
 }
 
