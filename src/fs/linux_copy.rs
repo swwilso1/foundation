@@ -29,7 +29,7 @@ pub async fn async_copy<F>(
     meter: Option<Arc<Mutex<ProgressMeter>>>,
 ) -> Result<(), FoundationError>
 where
-    F: Fn() -> bool,
+    F: Fn() -> bool + std::marker::Sync + std::marker::Send + 'static,
 {
     if !src.exists() {
         return Err(FoundationError::FileNotFound(src.to_path_buf()));
