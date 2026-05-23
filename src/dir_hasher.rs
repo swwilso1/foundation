@@ -118,20 +118,24 @@ impl DirHasher {
 /// # Returns
 ///
 /// The hash of the directory on success and a FoundationError on failure.
-pub fn hash_directory(
+pub fn hash_directory<F>(
     path: &Path,
     dir_hasher: &mut DirHasher,
+    aborter: Arc<F>,
     meter: Option<Arc<Mutex<ProgressMeter>>>,
-) -> Result<String, FoundationError> {
+) -> Result<String, FoundationError>
+where
+    F: Fn() -> bool,
+{
     for entry in path.read_dir()? {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
             let mut hasher = DirHasher::new(&path);
-            hash_directory(&path, &mut hasher, meter.clone())?;
+            hash_directory(&path, &mut hasher, aborter.clone(), meter.clone())?;
             dir_hasher.add_directory_entry(DirEntry::Dir(path.display().to_string(), hasher));
         } else {
-            hash_file(&path, dir_hasher, meter.clone())?;
+            hash_file(&path, dir_hasher, aborter.clone(), meter.clone())?;
         }
     }
     Ok(dir_hasher.hash())
@@ -143,17 +147,22 @@ pub fn hash_directory(
 ///
 /// * `path` - The path to the file to hash.
 /// * `dir_hasher` - The DirHasher to add the file to.
+/// * `aborter` - A function that returns true if the hash operation should abort.
 /// * `meter` - An optional progress meter.
 ///
 /// # Returns
 ///
 /// The hash of the file on success and a FoundationError on failure.
-pub fn hash_file(
+pub fn hash_file<F>(
     path: &Path,
     dir_hasher: &mut DirHasher,
+    aborter: Arc<F>,
     meter: Option<Arc<Mutex<ProgressMeter>>>,
-) -> Result<String, FoundationError> {
-    let hash = get_hash_for_file(path, meter)?;
+) -> Result<String, FoundationError>
+where
+    F: Fn() -> bool,
+{
+    let hash = get_hash_for_file(path, aborter.clone(), meter)?;
     dir_hasher.add_directory_entry(DirEntry::File(path.display().to_string(), hash.clone()));
     Ok(hash)
 }
@@ -212,7 +221,7 @@ mod tests {
 
         let mut dir_hasher = DirHasher::new(&start_dir);
 
-        let hash = hash_directory(&start_dir, &mut dir_hasher, None).unwrap();
+        let hash = hash_directory(&start_dir, &mut dir_hasher, Arc::new(|| false), None).unwrap();
         assert_eq!(
             hash,
             "6fb9784954af75b41e1da47215f98c5e5dd0ea09d0567ce707ff9d42d95bb9fd".to_string()
@@ -249,7 +258,7 @@ mod tests {
 
         let mut dir_hasher = DirHasher::new(&start_dir);
 
-        let hash = hash_directory(&start_dir, &mut dir_hasher, None).unwrap();
+        let hash = hash_directory(&start_dir, &mut dir_hasher, Arc::new(|| false), None).unwrap();
         let json = dir_hasher.get_as_json();
 
         if let Some(dir_object) = json.as_object() {

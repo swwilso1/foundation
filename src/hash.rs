@@ -22,15 +22,20 @@ const CHUNK_SIZE: usize = 1024 * 1024;
 /// # Arguments
 ///
 /// * `path` - A reference to a Path.
+/// * `aborter` - A function that returns true if the function should abort and false otherwise.
 /// * `meter` - An optional reference to a ProgressMeter.
 ///
 /// # Returns
 ///
 /// A Result containing a string. If the file is successfully hashed, the result will be `Ok(String)`.
-pub fn get_hash_for_file(
+pub fn get_hash_for_file<F>(
     path: &Path,
+    aborter: Arc<F>,
     meter: Option<Arc<Mutex<ProgressMeter>>>,
-) -> Result<String, FoundationError> {
+) -> Result<String, FoundationError>
+where
+    F: Fn() -> bool,
+{
     let mut file = StdFile::open(path)?;
     let metadata = file.metadata()?;
     let mut chunk = vec![0u8; CHUNK_SIZE];
@@ -47,6 +52,9 @@ pub fn get_hash_for_file(
                 meter.increment_by(bytes_read as u64);
                 meter.notify(false);
             }
+        }
+        if aborter() {
+            return Err(FoundationError::AbortError("Operation aborted".to_string()));
         }
     }
 
@@ -75,16 +83,21 @@ pub async fn async_get_hash_for_file(path: &Path) -> Result<String, FoundationEr
 /// # Arguments
 ///
 /// * `path` - A reference to a Path.
+/// * `aborter` - A function that returns true if the hash should abort and false otherwise.
 /// * `meter` - A mutable reference to a ProgressMeter.
 ///
 /// # Returns
 ///
 /// A Result containg the hash of the file contents in a String or a FoundationError if an
 /// error occurs.
-pub async fn async_get_hash_for_file_with_meter(
+pub async fn async_get_hash_for_file_with_meter<F>(
     path: &Path,
+    aborter: Arc<F>,
     meter: Arc<Mutex<ProgressMeter>>,
-) -> Result<String, FoundationError> {
+) -> Result<String, FoundationError>
+where
+    F: Fn() -> bool,
+{
     let mut file = TokioFile::open(path).await?;
     let metadata = file.metadata().await?;
     let mut chunk = vec![0u8; CHUNK_SIZE];
@@ -100,6 +113,9 @@ pub async fn async_get_hash_for_file_with_meter(
             meter.increment_by(bytes_read as u64);
             meter.notify(false);
         }
+        if aborter() {
+            return Err(FoundationError::AbortError("Operation aborted".to_string()));
+        }
     }
 
     Ok(hasher.finalize().to_hex().to_string())
@@ -111,17 +127,22 @@ pub async fn async_get_hash_for_file_with_meter(
 ///
 /// * `path` - A reference to a Path.
 /// * `size` - The number of bytes to read from the file.
+/// * `aborter` - A function that returns true if the hash should abort and false otherwise.
 /// * `meter` - A mutable reference to a ProgressMeter.
 ///
 /// # Returns
 ///
 /// A Result containing the hash of the file contents in a String or a FoundationError if an
 /// error occurs.
-pub async fn get_hash_for_file_with_meter_of_bytes(
+pub async fn get_hash_for_file_with_meter_of_bytes<F>(
     path: &Path,
     size: usize,
+    aborter: Arc<F>,
     meter: Arc<Mutex<ProgressMeter>>,
-) -> Result<String, FoundationError> {
+) -> Result<String, FoundationError>
+where
+    F: Fn() -> bool,
+{
     let mut file = TokioFile::open(path).await?;
     let mut chunk = vec![0u8; CHUNK_SIZE];
     let mut hasher = Hasher::new();
@@ -136,6 +157,10 @@ pub async fn get_hash_for_file_with_meter_of_bytes(
             meter.increment_by(bytes_read as u64);
             meter.notify(false);
         }
+
+        if aborter() {
+            return Err(FoundationError::AbortError("Operation aborted".to_string()));
+        }
     }
 
     Ok(hasher.finalize().to_hex().to_string())
@@ -147,17 +172,22 @@ pub async fn get_hash_for_file_with_meter_of_bytes(
 ///
 /// * `path` - A reference to a Path.
 /// * `include_file_names` - A boolean indicating whether to include file names in the hash.
+/// * `aborter` - A function that returns true if the hash operation should abort and false otherwise.
 /// * `meter` - A mutable reference to a ProgressMeter.
 ///
 /// # Returns
 ///
 /// A Result containing the hash of the directory contents in a String or a FoundationError if an
 /// error occurs.
-pub fn get_hash_for_dir(
+pub fn get_hash_for_dir<F>(
     path: &Path,
     include_file_names: bool,
+    aborter: Arc<F>,
     meter: Option<Arc<Mutex<ProgressMeter>>>,
-) -> Result<String, FoundationError> {
+) -> Result<String, FoundationError>
+where
+    F: Fn() -> bool,
+{
     let mut hasher = Hasher::new();
     for entry in walkdir::WalkDir::new(path)
         .min_depth(1)
@@ -179,6 +209,9 @@ pub fn get_hash_for_dir(
                         meter.increment_by(bytes_read as u64);
                         meter.notify(false);
                     }
+                }
+                if aborter() {
+                    return Err(FoundationError::AbortError("Operation aborted".to_string()));
                 }
             }
             if include_file_names {
@@ -240,17 +273,22 @@ pub async fn async_get_hash_for_dir(
 ///
 /// * `path` - A reference to a Path.
 /// * `include_file_names` - A boolean indicating whether to include file names in the hash.
+/// * `aborter` - A function that returns true if the hash operation should abort.
 /// * `meter` - A mutable reference to a ProgressMeter.
 ///
 /// # Returns
 ///
 /// A Result containing the hash of the directory contents in a String or a FoundationError if an
 /// error occurs.
-pub async fn async_get_hash_for_dir_with_meter(
+pub async fn async_get_hash_for_dir_with_meter<F>(
     path: &Path,
     include_file_names: bool,
+    aborter: Arc<F>,
     meter: &mut Arc<Mutex<ProgressMeter>>,
-) -> Result<String, FoundationError> {
+) -> Result<String, FoundationError>
+where
+    F: Fn() -> bool,
+{
     let mut hasher = Hasher::new();
     for entry in walkdir::WalkDir::new(path)
         .min_depth(1)
@@ -270,6 +308,10 @@ pub async fn async_get_hash_for_dir_with_meter(
                 if let Ok(mut meter) = meter.lock() {
                     meter.increment_by(bytes_read as u64);
                     meter.notify(false);
+                }
+
+                if aborter() {
+                    return Err(FoundationError::AbortError("Operation aborted".to_string()));
                 }
             }
             if include_file_names {

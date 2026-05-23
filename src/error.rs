@@ -7,6 +7,9 @@ use walkdir::Error as WalkdirError;
 
 #[derive(Error, Debug)]
 pub enum FoundationError {
+    #[error("Abort error: {0}")]
+    AbortError(String),
+
     #[error("Address Parse error: {0}")]
     AddressParseError(std::net::AddrParseError),
 

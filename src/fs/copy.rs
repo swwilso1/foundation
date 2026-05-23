@@ -2,7 +2,7 @@ use crate::error::FoundationError;
 use crate::progressmeter::ProgressMeter;
 use nix::unistd::fsync;
 use std::io::{Read, Write};
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsRawFd, RawFd};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -74,5 +74,16 @@ pub fn copy(
         )));
     }
 
+    Ok(())
+}
+
+pub fn sync(fd: RawFd) -> Result<(), FoundationError> {
+    // Make sure to sync the writes to the destination.
+    if let Err(e) = fsync(fd) {
+        return Err(FoundationError::SyncError(format!(
+            "Failed to sync data: {}",
+            e
+        )));
+    }
     Ok(())
 }
