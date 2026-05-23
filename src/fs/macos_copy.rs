@@ -29,7 +29,7 @@ pub async fn async_copy<F>(
     meter: Option<Arc<Mutex<ProgressMeter>>>,
 ) -> Result<(), FoundationError>
 where
-    F: Fn() -> bool,
+    F: Fn() -> bool + std::marker::Send + std::marker::Sync + 'static,
 {
     if !src.exists() {
         return Err(FoundationError::FileNotFound(src.to_path_buf()));
@@ -132,7 +132,7 @@ mod tests {
         async_copy(
             src_file.path(),
             &dest_path,
-            Arc::new(|| {
+            Arc::new(move || {
                 let later = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
