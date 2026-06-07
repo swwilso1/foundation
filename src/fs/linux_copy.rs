@@ -1,6 +1,7 @@
 use crate::error::FoundationError;
 use crate::fs::copy::sync;
 use crate::progressmeter::ProgressMeter;
+use std::io;
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
@@ -65,9 +66,51 @@ where
                 unsafe { libc::sendfile(dest_fd, src_fd, std::ptr::null_mut(), bytes_to_transfer) };
 
             if bytes_sent < 0 {
+                let err = io::Error::last_os_error();
+                let errno = err.raw_os_error().unwrap_or(0);
+
+                let errmsg = match errno {
+                    libc::EIO => {
+                        // Hardware I/O error - USB transport failure
+                        // Do not retry, the device is in an unknown state.
+                        "USB transport failure".to_string()
+                    }
+                    libc::ENODEV => {
+                        // Device is completely gone.
+                        "device disappeared from USB subsystem".to_string()
+                    }
+                    libc::ENOSPC => {
+                        // No space left on device.
+                        "no space left on device".to_string()
+                    }
+                    libc::EINTR => {
+                        // Interrupted by OS signal, we can safely retry.
+                        continue;
+                    }
+                    libc::EAGAIN => {
+                        // The device would block. We probably are not in a non-blocking
+                        // case, but give the device a few milliseconds and try again.
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                        continue;
+                    }
+                    libc::EBADF => {
+                        // The file descriptor is not invalid
+                        // device was lost
+                        "invalid file descriptor".to_string()
+                    }
+                    libc::EFAULT => {
+                        // Bad offset pointer to libc::sendfile(). This should not happen.
+                        "invalid sendfile offset parameter".to_string()
+                    }
+                    _ => {
+                        // Unknown error
+                        format!("sendfile failed with error {}: {}", errno, err)
+                    }
+                };
+
                 return Err(FoundationError::CopyFailed(format!(
                     "Error copying file: {}",
-                    std::io::Error::last_os_error()
+                    errmsg
                 )));
             }
 
@@ -156,7 +199,7 @@ mod tests {
         async_copy(
             src_file.path(),
             &dest_path,
-            Arc::new(|| {
+            Arc::new(move || {
                 let later = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
