@@ -166,6 +166,13 @@ impl NetworkService for NetplanService {
                                         } else if inner_key == "addresses"
                                             && inner_value.as_sequence().is_some()
                                         {
+                                            // The netplan file is authoritative for the configured
+                                            // static addresses. Clear any addresses already present
+                                            // on this configuration (e.g. seeded from a live system
+                                            // query in load_settings_from_system) so that we do not
+                                            // accumulate duplicate addresses across a
+                                            // load/modify/write cycle.
+                                            configuration.interface.addresses.clear();
                                             for address in inner_value.as_sequence().unwrap() {
                                                 if !address.as_str().is_some() {
                                                     debug!("The {} mapping contains an 'addresses' key with a value that is not a string", interface_name);
@@ -187,6 +194,16 @@ impl NetworkService for NetplanService {
                                             {
                                                 if let Some(addresses) = address_value.as_sequence()
                                                 {
+                                                    // As with the interface addresses above, the
+                                                    // netplan file is authoritative for the
+                                                    // configured nameservers. Clear any existing
+                                                    // entries before populating so we do not
+                                                    // duplicate them across a load/modify/write
+                                                    // cycle.
+                                                    configuration
+                                                        .interface
+                                                        .nameserver_addresses
+                                                        .clear();
                                                     for address in addresses {
                                                         if let Some(address_str) = address.as_str()
                                                         {
@@ -622,6 +639,90 @@ mod tests {
 
         assert_eq!(read_config_map.len(), 2);
         assert_eq!(read_config_map, config_map);
+
+        netplan_service.remove_config_file().unwrap();
+    }
+
+    // Regression test for the address-duplication bug. When the configuration map is seeded from a
+    // live system query (as load_settings_from_system does) before the netplan file is loaded, the
+    // interface already carries its current addresses. Loading the netplan file must not append the
+    // file's static addresses on top of those, otherwise a load/modify/write cycle duplicates the
+    // IP addresses in the netplan configuration file.
+    #[test]
+    fn test_load_does_not_duplicate_seeded_addresses() {
+        let mut netplan_service =
+            NetplanService::new(PathBuf::from("/tmp/wifi_netplan_dedup.yaml"));
+
+        // Build and write a static Wi-Fi client configuration to disk.
+        let mut config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
+        let mut interface = NetworkInterface::new_with_name("wlan0");
+        interface.addresses.push(InterfaceAddr::new(
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 3)),
+            None,
+            Some(IpAddr::V4(Ipv4Addr::new(255, 255, 255, 0))),
+        ));
+        interface
+            .nameserver_addresses
+            .push(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)));
+        let mut wifi_config = WirelessConfiguration::default();
+        wifi_config.ssid = "PeanutButter".to_string();
+        wifi_config.password = Some("Jelly Time".to_string());
+        wifi_config.mode = WirelessMode::Client;
+        let config = NetworkConfiguration::new(
+            AddressMode::Static,
+            interface,
+            true,
+            Some(wifi_config),
+            None,
+        );
+        config_map.insert("wlan0".to_string(), config);
+
+        let result = netplan_service.write_configuration(&config_map);
+        assert!(result.is_ok());
+
+        // Seed a fresh map the way load_settings_from_system does: the live interface already has
+        // its current address. Note the live address carries a broadcast value while the file-parsed
+        // one does not, so the duplicate would not be caught by a simple equality dedup.
+        let mut seeded_map: HashMap<String, NetworkConfiguration> = HashMap::new();
+        let mut live_interface = NetworkInterface::new_with_name("wlan0");
+        live_interface.addresses.push(InterfaceAddr::new(
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 3)),
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 255))),
+            Some(IpAddr::V4(Ipv4Addr::new(255, 255, 255, 0))),
+        ));
+        live_interface
+            .nameserver_addresses
+            .push(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)));
+        seeded_map.insert(
+            "wlan0".to_string(),
+            NetworkConfiguration::new_with_interface(live_interface),
+        );
+
+        // Now load the netplan file on top of the seeded map.
+        let result = netplan_service.load_configuration(&mut seeded_map);
+        assert!(result.is_ok());
+
+        let loaded = seeded_map.get("wlan0").unwrap();
+        assert_eq!(
+            loaded.interface.addresses.len(),
+            1,
+            "netplan load must not duplicate addresses already present from a live query"
+        );
+        assert_eq!(
+            loaded.interface.nameserver_addresses.len(),
+            1,
+            "netplan load must not duplicate nameservers already present from a live query"
+        );
+
+        // A subsequent write must not duplicate the address in the file either. Read it back into a
+        // fresh map and confirm there is still exactly one address.
+        let result = netplan_service.write_configuration(&seeded_map);
+        assert!(result.is_ok());
+
+        let mut reread_map: HashMap<String, NetworkConfiguration> = HashMap::new();
+        let result = netplan_service.load_configuration(&mut reread_map);
+        assert!(result.is_ok());
+        assert_eq!(reread_map.get("wlan0").unwrap().interface.addresses.len(), 1);
 
         netplan_service.remove_config_file().unwrap();
     }
