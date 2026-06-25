@@ -115,11 +115,7 @@ impl KeyValueConfigFile {
         {
             Ok(mut file) => {
                 for (key, value) in configuration {
-                    if !value.is_empty() {
-                        writeln!(file, "{}={}", key, value)?;
-                    } else {
-                        writeln!(file, "{}", key)?;
-                    }
+                    writeln!(file, "{}={}", key, value)?;
                 }
                 Ok(())
             }
@@ -141,6 +137,7 @@ impl KeyValueConfigFile {
 mod tests {
     use super::*;
     use std::env::temp_dir;
+    use tempfile::tempdir;
 
     #[test]
     fn test_load_configuration() {
@@ -171,6 +168,151 @@ mod tests {
         file.save_configuration(&configuration).unwrap();
         let loaded_configuration = file.load_configuration().unwrap();
         assert_eq!(configuration, loaded_configuration);
+        assert!(file.file_exists());
+    }
+
+    #[test]
+    fn test_new_stores_filename() {
+        let path = PathBuf::from("/some/path/config.txt");
+        let file = KeyValueConfigFile::new(path.clone());
+        assert_eq!(file.filename, path);
+    }
+
+    #[test]
+    fn test_save_and_load_round_trip() {
+        let dir = tempdir().unwrap();
+        let file = KeyValueConfigFile::new(dir.path().join("config.txt"));
+        let mut configuration = HashMap::new();
+        configuration.insert("alpha".to_string(), "one".to_string());
+        configuration.insert("beta".to_string(), "two".to_string());
+
+        file.save_configuration(&configuration).unwrap();
+        let loaded = file.load_configuration().unwrap();
+        assert_eq!(configuration, loaded);
+    }
+
+    #[test]
+    fn test_load_nonexistent_file_returns_io_error() {
+        let dir = tempdir().unwrap();
+        let file = KeyValueConfigFile::new(dir.path().join("does_not_exist.txt"));
+        let result = file.load_configuration();
+        assert!(matches!(result, Err(FoundationError::IO(_))));
+    }
+
+    #[test]
+    fn test_load_skips_comments_and_empty_lines() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.txt");
+        std::fs::write(
+            &path,
+            "# This is a comment\n\nkey1=value1\n# another comment\nkey2=value2\n\n",
+        )
+        .unwrap();
+        let file = KeyValueConfigFile::new(path);
+
+        let loaded = file.load_configuration().unwrap();
+        let mut expected = HashMap::new();
+        expected.insert("key1".to_string(), "value1".to_string());
+        expected.insert("key2".to_string(), "value2".to_string());
+        assert_eq!(loaded, expected);
+    }
+
+    #[test]
+    fn test_load_discards_lines_without_equals() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.txt");
+        std::fs::write(&path, "key1=value1\nnoequalsline\nkey2=value2\n").unwrap();
+        let file = KeyValueConfigFile::new(path);
+
+        let loaded = file.load_configuration().unwrap();
+        let mut expected = HashMap::new();
+        expected.insert("key1".to_string(), "value1".to_string());
+        expected.insert("key2".to_string(), "value2".to_string());
+        assert_eq!(loaded, expected);
+        assert!(!loaded.contains_key("noequalsline"));
+    }
+
+    #[test]
+    fn test_load_value_containing_equals_is_preserved() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.txt");
+        // Only the first '=' should split the key from the value.
+        std::fs::write(&path, "key=a=b=c\n").unwrap();
+        let file = KeyValueConfigFile::new(path);
+
+        let loaded = file.load_configuration().unwrap();
+        assert_eq!(loaded.get("key"), Some(&"a=b=c".to_string()));
+    }
+
+    #[test]
+    fn test_load_allows_empty_value() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.txt");
+        std::fs::write(&path, "key=\n").unwrap();
+        let file = KeyValueConfigFile::new(path);
+
+        let loaded = file.load_configuration().unwrap();
+        assert_eq!(loaded.get("key"), Some(&"".to_string()));
+    }
+
+    #[test]
+    fn test_save_writes_empty_value_with_equals() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.txt");
+        let file = KeyValueConfigFile::new(path.clone());
+        let mut configuration = HashMap::new();
+        configuration.insert("flag".to_string(), "".to_string());
+
+        file.save_configuration(&configuration).unwrap();
+        let contents = std::fs::read_to_string(&path).unwrap();
+        // A key with an empty value is written as "key=" so it round-trips.
+        assert_eq!(contents, "flag=\n");
+
+        // The empty-valued key survives a save -> load round trip.
+        let loaded = file.load_configuration().unwrap();
+        assert_eq!(loaded, configuration);
+    }
+
+    #[test]
+    fn test_save_truncates_existing_file() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.txt");
+        let file = KeyValueConfigFile::new(path.clone());
+
+        let mut first = HashMap::new();
+        first.insert("old_key".to_string(), "old_value".to_string());
+        file.save_configuration(&first).unwrap();
+
+        let mut second = HashMap::new();
+        second.insert("new_key".to_string(), "new_value".to_string());
+        file.save_configuration(&second).unwrap();
+
+        let loaded = file.load_configuration().unwrap();
+        assert_eq!(loaded, second);
+        assert!(!loaded.contains_key("old_key"));
+    }
+
+    #[test]
+    fn test_save_empty_configuration_creates_empty_file() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.txt");
+        let file = KeyValueConfigFile::new(path.clone());
+
+        file.save_configuration(&HashMap::new()).unwrap();
+        assert!(file.file_exists());
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(contents, "");
+        assert!(file.load_configuration().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_file_exists_false_then_true() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.txt");
+        let file = KeyValueConfigFile::new(path);
+        assert!(!file.file_exists());
+
+        file.save_configuration(&HashMap::new()).unwrap();
         assert!(file.file_exists());
     }
 }
