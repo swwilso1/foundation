@@ -187,7 +187,7 @@ pub fn bytes_from_string(s: &str) -> Option<u128> {
 
     let value: f64 = num.parse().ok()?;
     let multiplier: u128 = match unit.trim() {
-        "" | "b" | "B" => 1,
+        "" | "b" | "B" | "bytes" => 1,
         "Kb" => 1024_u128,
         "KB" => 1000_u128,
         "Mb" => 1024_u128.pow(2),
@@ -556,5 +556,145 @@ mod tests {
         // assert_eq!(bytes_from_string("1YB"), Some(1000000000000000000000000_u128));
         // assert_eq!(bytes_from_string("17Yb"), Some(20551738933448695970004992_u128));
         // assert_eq!(bytes_from_string("17YB"), Some(17000000000000000000000000_u128));
+    }
+
+    #[test]
+    fn test_bytes_from_string_zero() {
+        assert_eq!(bytes_from_string("0"), Some(0_u128));
+        assert_eq!(bytes_from_string("0Kb"), Some(0_u128));
+        assert_eq!(bytes_from_string("0GB"), Some(0_u128));
+    }
+
+    #[test]
+    fn test_bytes_from_string_fractional() {
+        assert_eq!(bytes_from_string("1.5Kb"), Some(1536_u128));
+        assert_eq!(bytes_from_string("1.5KB"), Some(1500_u128));
+        assert_eq!(bytes_from_string("2.5Mb"), Some(2621440_u128));
+        assert_eq!(bytes_from_string("0.5GB"), Some(500000000_u128));
+        // A bare fractional value with no unit truncates toward zero.
+        assert_eq!(bytes_from_string("1.9"), Some(1_u128));
+    }
+
+    #[test]
+    fn test_bytes_from_string_whitespace_and_space_separated() {
+        // Leading/trailing whitespace is trimmed.
+        assert_eq!(bytes_from_string("  1024  "), Some(1024_u128));
+        assert_eq!(bytes_from_string("\t2Kb\n"), Some(2048_u128));
+        // Whitespace between the number and the unit is tolerated.
+        assert_eq!(bytes_from_string("1 Kb"), Some(1024_u128));
+        assert_eq!(bytes_from_string("1.5 MB"), Some(1500000_u128));
+    }
+
+    #[test]
+    fn test_bytes_from_string_invalid() {
+        // Empty / whitespace-only input.
+        assert_eq!(bytes_from_string(""), None);
+        assert_eq!(bytes_from_string("   "), None);
+        // No numeric portion.
+        assert_eq!(bytes_from_string("Kb"), None);
+        assert_eq!(bytes_from_string("abc"), None);
+        // Unknown / unsupported units.
+        assert_eq!(bytes_from_string("1Xb"), None);
+        assert_eq!(bytes_from_string("10foo"), None);
+        // Malformed numbers.
+        assert_eq!(bytes_from_string("1.2.3Kb"), None);
+        assert_eq!(bytes_from_string("-1024"), None);
+        // Unit casing is significant: "kb"/"gb" are not recognized.
+        assert_eq!(bytes_from_string("1kb"), None);
+        assert_eq!(bytes_from_string("1gb"), None);
+    }
+
+    #[test]
+    fn test_normalize_byte_size_zero() {
+        assert_eq!(normalize_byte_size(0, ByteMetricBase::Metric), "0.00 bytes");
+        assert_eq!(
+            normalize_byte_size(0, ByteMetricBase::Decimal),
+            "0.00 bytes"
+        );
+    }
+
+    #[test]
+    fn test_normalize_byte_size_sub_boundary() {
+        // Just below the kilo boundary for each base.
+        assert_eq!(
+            normalize_byte_size(1023, ByteMetricBase::Metric),
+            "1023.00 bytes"
+        );
+        // 1023 has already crossed the decimal kilo boundary (1000).
+        assert_eq!(
+            normalize_byte_size(1023, ByteMetricBase::Decimal),
+            "1.02 KB"
+        );
+        assert_eq!(
+            normalize_byte_size(999, ByteMetricBase::Decimal),
+            "999.00 bytes"
+        );
+    }
+
+    #[test]
+    fn test_normalize_byte_size_rounding() {
+        // 1536 / 1024 == 1.5 exactly.
+        assert_eq!(
+            normalize_byte_size(1536, ByteMetricBase::Metric),
+            "1.50 Kb"
+        );
+        // 1500 / 1024 == 1.46484375 -> rounds to two decimals.
+        assert_eq!(
+            normalize_byte_size(1500, ByteMetricBase::Metric),
+            "1.46 Kb"
+        );
+        assert_eq!(
+            normalize_byte_size(1500, ByteMetricBase::Decimal),
+            "1.50 KB"
+        );
+    }
+
+    #[test]
+    fn test_normalize_size_zero() {
+        assert_eq!(
+            normalize_size(0, ByteMetricBase::Metric),
+            (0.0, "bytes".to_string())
+        );
+        assert_eq!(
+            normalize_size(0, ByteMetricBase::Decimal),
+            (0.0, "bytes".to_string())
+        );
+    }
+
+    #[test]
+    fn test_bytes_from_string_bytes_unit() {
+        // The "bytes" suffix emitted by normalize_byte_size is parseable.
+        assert_eq!(bytes_from_string("10 bytes"), Some(10_u128));
+        assert_eq!(bytes_from_string("0 bytes"), Some(0_u128));
+        assert_eq!(bytes_from_string("1023bytes"), Some(1023_u128));
+    }
+
+    #[test]
+    fn test_normalize_size_max_u128() {
+        // The largest representable byte count always lands in the Yotta bucket.
+        let (_, metric_suffix) = normalize_size(u128::MAX, ByteMetricBase::Metric);
+        assert_eq!(metric_suffix, "Yb".to_string());
+        let (_, decimal_suffix) = normalize_size(u128::MAX, ByteMetricBase::Decimal);
+        assert_eq!(decimal_suffix, "YB".to_string());
+    }
+
+    #[test]
+    fn test_round_trip_metric() {
+        // Exact powers of 1024 round-trip through normalization and parsing,
+        // including sub-KiB values that render with the "bytes" suffix.
+        for (size, _) in [
+            (0_u128, "bytes"),
+            (512, "bytes"),
+            (1023, "bytes"),
+            (1024, "Kb"),
+            (1048576, "Mb"),
+            (1073741824, "Gb"),
+            (1099511627776, "Tb"),
+        ] {
+            let formatted = normalize_byte_size(size, ByteMetricBase::Metric);
+            // normalize_byte_size renders "1.00 Kb"; bytes_from_string accepts
+            // the same string and should recover the original size.
+            assert_eq!(bytes_from_string(&formatted), Some(size));
+        }
     }
 }
