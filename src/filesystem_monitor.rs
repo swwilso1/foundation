@@ -151,7 +151,57 @@ impl FileSystemMonitor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::Mutex as StdMutex;
     use std::thread::sleep;
+
+    /// Create a unique temporary directory for a test and return its path. The caller is
+    /// responsible for removing it.
+    fn unique_temp_dir(label: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "fs_monitor_test_{}_{}_{:?}",
+            label,
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn test_event_handler_invokes_callback_on_ok() {
+        let received = Arc::new(StdMutex::new(Vec::new()));
+        let sink = received.clone();
+        let mut handler = MonitorEventHandler::new(Box::new(move |event: Event| {
+            sink.lock().unwrap().push(event);
+        }));
+
+        let event = Event::new(EventKind::Create(notify::event::CreateKind::Any))
+            .add_path(std::path::PathBuf::from("/some/path"));
+        handler.handle_event(Ok(event));
+
+        let events = received.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].kind,
+            EventKind::Create(notify::event::CreateKind::Any)
+        );
+        assert_eq!(events[0].paths, vec![std::path::PathBuf::from("/some/path")]);
+    }
+
+    #[test]
+    fn test_event_handler_skips_callback_on_err() {
+        let fired = Arc::new(AtomicBool::new(false));
+        let flag = fired.clone();
+        let mut handler = MonitorEventHandler::new(Box::new(move |_event: Event| {
+            flag.store(true, Ordering::Relaxed);
+        }));
+
+        // An error result must not invoke the callback; it should only be logged.
+        handler.handle_event(Err(notify::Error::generic("synthetic error")));
+
+        assert!(!fired.load(Ordering::Relaxed));
+    }
 
     #[test]
     fn test_new() {
@@ -197,5 +247,100 @@ mod tests {
         );
         std::fs::remove_file(tmp_file).unwrap();
         monitor.stop();
+    }
+
+    #[test]
+    fn test_clone_shares_thread_controller() {
+        let callback = Box::new(|_event: Event| {});
+        let monitor = FileSystemMonitor::new(callback, Config::default()).unwrap();
+        let mut clone = monitor.clone();
+
+        // The clone shares the underlying thread controller, so stopping the clone is
+        // observable through the original.
+        assert!(!monitor.thread_controller.should_stop());
+        clone.stop();
+        assert!(monitor.thread_controller.should_stop());
+    }
+
+    #[test]
+    fn test_watch_nonexistent_path_is_tolerated() {
+        let callback = Box::new(|_event: Event| {});
+        let mut monitor = FileSystemMonitor::new(callback, Config::default()).unwrap();
+        let missing = std::env::temp_dir().join(format!(
+            "fs_monitor_does_not_exist_{}_{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        // The poll watcher accepts a path that does not (yet) exist without error.
+        let result = monitor.watch(&missing, RecursiveMode::Recursive);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_watch_reports_event_path() {
+        let dir = unique_temp_dir("event_path");
+        let target = dir.join("watched_file.txt");
+        let target_for_cb = target.clone();
+        let matched = Arc::new(AtomicBool::new(false));
+        let flag = matched.clone();
+
+        let callback = Box::new(move |event: Event| {
+            if event.paths.iter().any(|p| p == &target_for_cb) {
+                flag.store(true, Ordering::Relaxed);
+            }
+        });
+
+        // Use an explicit short poll interval so changes are detected promptly.
+        let config = Config::default().with_poll_interval(Duration::from_millis(50));
+        let mut monitor = FileSystemMonitor::new(callback, config).unwrap();
+        monitor.watch(&dir, RecursiveMode::Recursive).unwrap();
+        monitor.start(50).unwrap();
+
+        std::fs::write(&target, "hello").unwrap();
+
+        // Poll for the event for up to ~2 seconds to avoid flakiness.
+        let mut detected = false;
+        for _ in 0..40 {
+            if matched.load(Ordering::Relaxed) {
+                detected = true;
+                break;
+            }
+            sleep(Duration::from_millis(50));
+        }
+
+        monitor.stop();
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(detected, "expected an event referencing the watched file");
+    }
+
+    #[test]
+    fn test_watch_nonrecursive_mode() {
+        let dir = unique_temp_dir("nonrecursive");
+        let count = Arc::new(AtomicUsize::new(0));
+        let counter = count.clone();
+        let callback = Box::new(move |_event: Event| {
+            counter.fetch_add(1, Ordering::Relaxed);
+        });
+
+        let config = Config::default().with_poll_interval(Duration::from_millis(50));
+        let mut monitor = FileSystemMonitor::new(callback, config).unwrap();
+        monitor.watch(&dir, RecursiveMode::NonRecursive).unwrap();
+        monitor.start(50).unwrap();
+
+        let file = dir.join("top_level.txt");
+        std::fs::write(&file, "data").unwrap();
+
+        let mut saw_event = false;
+        for _ in 0..40 {
+            if count.load(Ordering::Relaxed) > 0 {
+                saw_event = true;
+                break;
+            }
+            sleep(Duration::from_millis(50));
+        }
+
+        monitor.stop();
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(saw_event, "expected at least one event in non-recursive mode");
     }
 }
