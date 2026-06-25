@@ -87,3 +87,129 @@ impl Shell {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_execute_command_success() {
+        let output =
+            Shell::execute_command("echo", vec!["hello".to_string()]).expect("echo should succeed");
+        assert!(output.status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("hello"));
+    }
+
+    #[test]
+    fn test_execute_command_passes_arguments() {
+        // Pass multiple arguments and confirm they all appear in stdout.
+        let args = vec!["one".to_string(), "two".to_string(), "three".to_string()];
+        let output = Shell::execute_command("echo", args).expect("echo should succeed");
+        assert!(output.status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("one"));
+        assert!(stdout.contains("two"));
+        assert!(stdout.contains("three"));
+    }
+
+    #[test]
+    fn test_execute_command_nonexistent_returns_error() {
+        // On non-Windows the command is invoked directly, so a bogus binary yields an Err.
+        // On Windows the command runs via `cmd /C`, which succeeds while the inner command
+        // fails, so only assert the error path off Windows.
+        let result = Shell::execute_command(
+            "this_command_should_not_exist_anywhere_12345",
+            vec![],
+        );
+        if cfg!(target_os = "windows") {
+            // `cmd /C bogus` still spawns cmd successfully.
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(result, Err(FoundationError::IO(_))));
+        }
+    }
+
+    #[test]
+    fn test_execute_success_returns_stdout_and_stderr() {
+        let (stdout, stderr) = Shell::execute("echo", vec!["hello".to_string()]);
+        let stdout = stdout.expect("stdout should be Some on success");
+        let stderr = stderr.expect("stderr should be Some on success");
+        assert!(stdout.contains("hello"));
+        // echo writes nothing to stderr.
+        assert!(stderr.is_empty());
+    }
+
+    #[test]
+    fn test_execute_nonexistent_command_returns_none_none() {
+        // A command that cannot be spawned makes execute_command return Err, so execute
+        // yields (None, None). This only holds where the command is invoked directly.
+        if !cfg!(target_os = "windows") {
+            let (stdout, stderr) =
+                Shell::execute("this_command_should_not_exist_anywhere_12345", vec![]);
+            assert!(stdout.is_none());
+            assert!(stderr.is_none());
+        }
+    }
+
+    #[test]
+    fn test_execute_failing_command_returns_none_stdout_some_stderr() {
+        // `false` exits non-zero with no output; on most shells stderr is empty but the
+        // status is unsuccessful, so stdout must be None and stderr must be Some.
+        if !cfg!(target_os = "windows") {
+            let (stdout, stderr) = Shell::execute("false", vec![]);
+            assert!(stdout.is_none());
+            assert!(stderr.is_some());
+        }
+    }
+
+    #[test]
+    fn test_execute_command_failure_captures_stderr() {
+        // `ls` of a missing path exits non-zero and writes a diagnostic to stderr.
+        if !cfg!(target_os = "windows") {
+            let (stdout, stderr) = Shell::execute(
+                "ls",
+                vec!["/this/path/definitely/does/not/exist/12345".to_string()],
+            );
+            assert!(stdout.is_none());
+            let stderr = stderr.expect("stderr should be Some on failure");
+            assert!(!stderr.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_spawn_command_success() {
+        let mut child =
+            Shell::spawn_command("echo", vec!["hello".to_string()]).expect("echo should spawn");
+        let status = child.wait().expect("child should be waitable");
+        assert!(status.success());
+    }
+
+    #[test]
+    fn test_spawn_command_with_arguments() {
+        // Spawn a process that exits non-zero and confirm we observe that status.
+        if !cfg!(target_os = "windows") {
+            let mut child =
+                Shell::spawn_command("sh", vec!["-c".to_string(), "exit 3".to_string()])
+                    .expect("sh should spawn");
+            let status = child.wait().expect("child should be waitable");
+            assert_eq!(status.code(), Some(3));
+        }
+    }
+
+    #[test]
+    fn test_spawn_command_nonexistent_returns_error() {
+        if cfg!(target_os = "windows") {
+            // `cmd /C bogus` spawns cmd successfully; just reap the child.
+            if let Ok(mut child) =
+                Shell::spawn_command("this_command_should_not_exist_anywhere_12345", vec![])
+            {
+                let _ = child.wait();
+            }
+        } else {
+            let result =
+                Shell::spawn_command("this_command_should_not_exist_anywhere_12345", vec![]);
+            assert!(matches!(result, Err(FoundationError::IO(_))));
+        }
+    }
+}
