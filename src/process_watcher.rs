@@ -149,4 +149,113 @@ mod tests {
         watcher.stop().unwrap();
         assert!(is_dead.lock().unwrap().clone());
     }
+
+    #[test]
+    fn test_stop_without_start() {
+        // Calling stop() before start() should be a no-op: there is no thread handle to join.
+        let mut watcher = ProcessWatcher::new();
+        watcher.stop().unwrap();
+    }
+
+    #[test]
+    fn test_remove_callback() {
+        let mut watcher = ProcessWatcher::new();
+
+        watcher.add_callback(2147483647, Box::new(|_| {}));
+        assert_eq!(watcher.callbacks.lock().unwrap().len(), 1);
+
+        watcher.remove_callback(2147483647);
+        assert!(watcher.callbacks.lock().unwrap().is_empty());
+
+        // Removing a process that was never registered is a harmless no-op.
+        watcher.remove_callback(2147483647);
+        assert!(watcher.callbacks.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_multiple_dead_processes() {
+        let mut watcher = ProcessWatcher::new();
+        let fired = Arc::new(Mutex::new(Vec::<ProcessId>::new()));
+
+        // Two distinct process IDs that are extremely unlikely to exist.
+        for pid in [2147483646, 2147483647] {
+            let fired_clone = fired.clone();
+            watcher.add_callback(
+                pid,
+                Box::new(move |pid| {
+                    fired_clone.lock().unwrap().push(pid);
+                }),
+            );
+        }
+
+        watcher.start().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        watcher.stop().unwrap();
+
+        // The watcher polls every 100ms and never removes a callback on its own, so a still-dead
+        // PID may fire more than once. Assert on the distinct set of PIDs that fired.
+        let mut got = fired.lock().unwrap().clone();
+        got.sort_unstable();
+        got.dedup();
+        assert_eq!(got, vec![2147483646, 2147483647]);
+    }
+
+    #[test]
+    fn test_stop_reports_join_error_when_thread_panics() {
+        // A callback that panics unwinds the watcher thread; joining a panicked thread must
+        // surface as FoundationError::JoinError.
+        let mut watcher = ProcessWatcher::new();
+        watcher.add_callback(
+            2147483647,
+            Box::new(|_| panic!("intentional panic from callback")),
+        );
+        watcher.start().unwrap();
+
+        // Give the watcher thread a chance to poll, fire the callback, and panic.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+
+        match watcher.stop() {
+            Err(FoundationError::JoinError(_)) => {}
+            other => panic!("expected JoinError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_live_process_then_terminates() {
+        use std::process::Command;
+
+        // Spawn a child that stays alive until we kill it.
+        let mut child = Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("failed to spawn sleep");
+        let pid = child.id();
+
+        let mut watcher = ProcessWatcher::new();
+        let is_dead = Arc::new(Mutex::new(false));
+        let is_dead_clone = is_dead.clone();
+        watcher.add_callback(
+            pid,
+            Box::new(move |_| {
+                *is_dead_clone.lock().unwrap() = true;
+            }),
+        );
+
+        watcher.start().unwrap();
+
+        // Give the watcher a chance to observe the process while it is still alive: the callback
+        // must not fire yet.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert!(!is_dead.lock().unwrap().clone());
+
+        // Terminate the child and reap it so the PID is fully gone (a zombie still reports as
+        // alive to kill(pid, 0)).
+        child.kill().expect("failed to kill child");
+        child.wait().expect("failed to reap child");
+
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        watcher.stop().unwrap();
+
+        assert!(is_dead.lock().unwrap().clone());
+    }
 }
