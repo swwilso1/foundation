@@ -125,4 +125,129 @@ mod tests {
         let wrapped_bool = wrapped_bool.lock().unwrap();
         assert_eq!(*wrapped_bool, true);
     }
+
+    #[tokio::test]
+    async fn test_schedule_handler_missing_key_returns_error() {
+        let mut delayed_handler: DelayedHandler<String, String> = DelayedHandler::new(1);
+
+        let key = String::from("missing");
+        let result = delayed_handler.schedule_handler(&key, "data".to_string());
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            FoundationError::HandlerNotFound
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_contains_handler_for_key() {
+        let mut delayed_handler: DelayedHandler<String, String> = DelayedHandler::new(1);
+
+        let key = String::from("test");
+        assert!(!delayed_handler.contains_handler_for_key(&key));
+
+        delayed_handler.add_handler(&key, Box::new(|_data: String| {}));
+        assert!(delayed_handler.contains_handler_for_key(&key));
+
+        let other_key = String::from("other");
+        assert!(!delayed_handler.contains_handler_for_key(&other_key));
+    }
+
+    #[tokio::test]
+    async fn test_remove_handler() {
+        let mut delayed_handler: DelayedHandler<String, String> = DelayedHandler::new(1);
+
+        let key = String::from("test");
+        delayed_handler.add_handler(&key, Box::new(|_data: String| {}));
+        assert!(delayed_handler.contains_handler_for_key(&key));
+
+        delayed_handler.remove_handler(&key);
+        assert!(!delayed_handler.contains_handler_for_key(&key));
+
+        // Removing a key that does not exist should be a no-op and not panic.
+        delayed_handler.remove_handler(&key);
+        assert!(!delayed_handler.contains_handler_for_key(&key));
+    }
+
+    #[tokio::test]
+    async fn test_schedule_handler_consumes_handler() {
+        let mut delayed_handler: DelayedHandler<String, String> = DelayedHandler::new(1);
+
+        let key = String::from("test");
+        delayed_handler.add_handler(&key, Box::new(|_data: String| {}));
+        assert!(delayed_handler.contains_handler_for_key(&key));
+
+        let result = delayed_handler.schedule_handler(&key, "data".to_string());
+        assert!(result.is_ok());
+
+        // After scheduling, the handler is removed and cannot be scheduled again.
+        assert!(!delayed_handler.contains_handler_for_key(&key));
+
+        let second = delayed_handler.schedule_handler(&key, "data".to_string());
+        assert!(second.is_err());
+        assert!(matches!(
+            second.unwrap_err(),
+            FoundationError::HandlerNotFound
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_add_handler_overwrites_existing() {
+        let counter = Arc::new(Mutex::new(0_i32));
+        let mut delayed_handler: DelayedHandler<String, String> = DelayedHandler::new(1);
+
+        let key = String::from("test");
+
+        // The first handler adds 1; it should be overwritten and never run.
+        let counter_first = counter.clone();
+        delayed_handler.add_handler(
+            &key,
+            Box::new(move |_data: String| {
+                *counter_first.lock().unwrap() += 1;
+            }),
+        );
+
+        // The second handler adds 100 and replaces the first.
+        let counter_second = counter.clone();
+        delayed_handler.add_handler(
+            &key,
+            Box::new(move |_data: String| {
+                *counter_second.lock().unwrap() += 100;
+            }),
+        );
+
+        let result = delayed_handler.schedule_handler(&key, "data".to_string());
+        assert!(result.is_ok());
+
+        sleep(Duration::from_secs(1)).await;
+
+        assert_eq!(*counter.lock().unwrap(), 100);
+    }
+
+    #[tokio::test]
+    async fn test_multiple_handlers_with_distinct_keys() {
+        let results = Arc::new(Mutex::new(Vec::<String>::new()));
+        let mut delayed_handler: DelayedHandler<i32, String> = DelayedHandler::new(2);
+
+        for key in [1, 2, 3] {
+            let results_c = results.clone();
+            delayed_handler.add_handler(
+                &key,
+                Box::new(move |data: String| {
+                    results_c.lock().unwrap().push(format!("{key}:{data}"));
+                }),
+            );
+        }
+
+        assert!(delayed_handler.schedule_handler(&1, "a".to_string()).is_ok());
+        assert!(delayed_handler.schedule_handler(&2, "b".to_string()).is_ok());
+        assert!(delayed_handler.schedule_handler(&3, "c".to_string()).is_ok());
+
+        sleep(Duration::from_secs(1)).await;
+
+        let mut collected = results.lock().unwrap().clone();
+        collected.sort();
+        assert_eq!(collected, vec!["1:a", "2:b", "3:c"]);
+    }
 }
