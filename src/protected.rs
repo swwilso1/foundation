@@ -44,10 +44,74 @@ impl<T> Protected<T> {
 mod tests {
     use super::*;
     use std::ops::Deref;
+    use std::thread;
 
     #[test]
     fn test_create() {
         let protected_int = Protected::new(32);
         assert_eq!(protected_int.lock().deref(), &32);
+    }
+
+    #[test]
+    fn test_mutate_through_lock() {
+        let protected_int = Protected::new(0);
+        *protected_int.lock() += 5;
+        *protected_int.lock() += 10;
+        assert_eq!(*protected_int.lock(), 15);
+    }
+
+    #[test]
+    fn test_clone_shares_underlying_data() {
+        // Cloning a `Protected<T>` clones the `Arc`, so both handles must observe
+        // mutations made through either one.
+        let original = Protected::new(String::from("a"));
+        let clone = original.clone();
+
+        original.lock().push('b');
+        assert_eq!(*clone.lock(), "ab");
+
+        clone.lock().push('c');
+        assert_eq!(*original.lock(), "abc");
+    }
+
+    #[test]
+    fn test_protects_non_clone_payload() {
+        // The wrapper itself is `Clone` (it clones the `Arc`) even when the
+        // protected value would be awkward to clone, such as a `Vec`.
+        let protected_vec = Protected::new(Vec::<i32>::new());
+        protected_vec.lock().push(1);
+        protected_vec.lock().push(2);
+        assert_eq!(*protected_vec.lock(), vec![1, 2]);
+    }
+
+    #[test]
+    fn test_shared_across_threads() {
+        let counter = Protected::new(0u64);
+        let thread_count = 8;
+        let increments = 1000;
+
+        let handles: Vec<_> = (0..thread_count)
+            .map(|_| {
+                let counter = counter.clone();
+                thread::spawn(move || {
+                    for _ in 0..increments {
+                        *counter.lock() += 1;
+                    }
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        assert_eq!(*counter.lock(), thread_count * increments);
+    }
+
+    #[test]
+    fn test_debug_formatting() {
+        let protected_int = Protected::new(42);
+        let rendered = format!("{:?}", protected_int);
+        assert!(rendered.contains("Protected"));
     }
 }
