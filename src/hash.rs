@@ -340,3 +340,310 @@ pub fn hash_string(input: &str) -> String {
     hasher.update(input.as_bytes());
     hasher.finalize().to_hex().to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU8, Ordering};
+    use tempfile::tempdir;
+
+    /// The well-known BLAKE3 hash of the empty input.
+    const EMPTY_HASH: &str = "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262";
+
+    /// An aborter that never aborts.
+    fn never() -> Arc<impl Fn() -> bool> {
+        Arc::new(|| false)
+    }
+
+    /// Compute the expected BLAKE3 hash of a byte slice directly.
+    fn expected_hash(bytes: &[u8]) -> String {
+        let mut hasher = Hasher::new();
+        hasher.update(bytes);
+        hasher.finalize().to_hex().to_string()
+    }
+
+    /// Create a `ProgressMeter` (wrapped for sharing) along with a shared tracker that records the
+    /// highest percentage reported to the notifier.
+    fn meter_with_tracker(total: u64) -> (Arc<Mutex<ProgressMeter>>, Arc<AtomicU8>) {
+        let tracker = Arc::new(AtomicU8::new(0));
+        let tracker_clone = tracker.clone();
+        let meter = ProgressMeter::new_with_notifier_and_size(
+            Box::new(move |percent| {
+                tracker_clone.fetch_max(percent, Ordering::SeqCst);
+            }),
+            total,
+        );
+        (Arc::new(Mutex::new(meter)), tracker)
+    }
+
+    // ---- hash_string -----------------------------------------------------
+
+    #[test]
+    fn test_hash_string_empty() {
+        assert_eq!(hash_string(""), EMPTY_HASH);
+    }
+
+    #[test]
+    fn test_hash_string_matches_hasher_and_is_deterministic() {
+        let input = "the quick brown fox";
+        assert_eq!(hash_string(input), expected_hash(input.as_bytes()));
+        assert_eq!(hash_string(input), hash_string(input));
+        assert_ne!(hash_string("a"), hash_string("b"));
+    }
+
+    // ---- get_hash_for_file -----------------------------------------------
+
+    #[test]
+    fn test_get_hash_for_file() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("file.txt");
+        let contents = b"hello world";
+        std::fs::write(&path, contents).unwrap();
+
+        let hash = get_hash_for_file(&path, never(), None).unwrap();
+        assert_eq!(hash, expected_hash(contents));
+    }
+
+    #[test]
+    fn test_get_hash_for_file_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("empty.txt");
+        std::fs::write(&path, b"").unwrap();
+
+        let hash = get_hash_for_file(&path, never(), None).unwrap();
+        assert_eq!(hash, EMPTY_HASH);
+    }
+
+    #[test]
+    fn test_get_hash_for_file_larger_than_chunk() {
+        // Exercise the multi-iteration read loop with a payload spanning several chunks.
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("big.bin");
+        let contents = vec![0xABu8; CHUNK_SIZE * 2 + 1234];
+        std::fs::write(&path, &contents).unwrap();
+
+        let hash = get_hash_for_file(&path, never(), None).unwrap();
+        assert_eq!(hash, expected_hash(&contents));
+    }
+
+    #[test]
+    fn test_get_hash_for_file_with_meter() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("file.txt");
+        let contents = vec![7u8; 4096];
+        std::fs::write(&path, &contents).unwrap();
+
+        let (meter, tracker) = meter_with_tracker(contents.len() as u64);
+        let hash = get_hash_for_file(&path, never(), Some(meter)).unwrap();
+        assert_eq!(hash, expected_hash(&contents));
+        assert_eq!(tracker.load(Ordering::SeqCst), 100);
+    }
+
+    #[test]
+    fn test_get_hash_for_file_aborts() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("file.txt");
+        std::fs::write(&path, vec![0u8; 4096]).unwrap();
+
+        let aborter = Arc::new(|| true);
+        let result = get_hash_for_file(&path, aborter, None);
+        assert!(matches!(result, Err(FoundationError::AbortError(_))));
+    }
+
+    #[test]
+    fn test_get_hash_for_file_nonexistent() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("does_not_exist.txt");
+        assert!(get_hash_for_file(&path, never(), None).is_err());
+    }
+
+    // ---- async_get_hash_for_file -----------------------------------------
+
+    #[tokio::test]
+    async fn test_async_get_hash_for_file_matches_sync() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("file.txt");
+        let contents = vec![3u8; CHUNK_SIZE + 17];
+        std::fs::write(&path, &contents).unwrap();
+
+        let async_hash = async_get_hash_for_file(&path).await.unwrap();
+        let sync_hash = get_hash_for_file(&path, never(), None).unwrap();
+        assert_eq!(async_hash, expected_hash(&contents));
+        assert_eq!(async_hash, sync_hash);
+    }
+
+    #[tokio::test]
+    async fn test_async_get_hash_for_file_nonexistent() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("missing.txt");
+        assert!(async_get_hash_for_file(&path).await.is_err());
+    }
+
+    // ---- async_get_hash_for_file_with_meter ------------------------------
+
+    #[tokio::test]
+    async fn test_async_get_hash_for_file_with_meter() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("file.txt");
+        let contents = vec![9u8; CHUNK_SIZE * 2];
+        std::fs::write(&path, &contents).unwrap();
+
+        let (meter, tracker) = meter_with_tracker(contents.len() as u64);
+        let hash = async_get_hash_for_file_with_meter(&path, never(), meter)
+            .await
+            .unwrap();
+        assert_eq!(hash, expected_hash(&contents));
+        assert_eq!(tracker.load(Ordering::SeqCst), 100);
+    }
+
+    #[tokio::test]
+    async fn test_async_get_hash_for_file_with_meter_aborts() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("file.txt");
+        std::fs::write(&path, vec![0u8; 4096]).unwrap();
+
+        let (meter, _tracker) = meter_with_tracker(4096);
+        let aborter = Arc::new(|| true);
+        let result = async_get_hash_for_file_with_meter(&path, aborter, meter).await;
+        assert!(matches!(result, Err(FoundationError::AbortError(_))));
+    }
+
+    // ---- get_hash_for_file_with_meter_of_bytes ---------------------------
+
+    #[tokio::test]
+    async fn test_get_hash_for_file_with_meter_of_bytes() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("file.bin");
+        let contents = vec![5u8; CHUNK_SIZE + 500];
+        std::fs::write(&path, &contents).unwrap();
+
+        // Hash only the first `size` bytes; the result must match hashing that prefix directly.
+        let size = CHUNK_SIZE + 100;
+        let (meter, tracker) = meter_with_tracker(size as u64);
+        let hash = get_hash_for_file_with_meter_of_bytes(&path, size, never(), meter)
+            .await
+            .unwrap();
+        assert_eq!(hash, expected_hash(&contents[..size]));
+        assert_eq!(tracker.load(Ordering::SeqCst), 100);
+    }
+
+    #[tokio::test]
+    async fn test_get_hash_for_file_with_meter_of_bytes_zero() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("file.bin");
+        std::fs::write(&path, vec![1u8; 100]).unwrap();
+
+        let (meter, _tracker) = meter_with_tracker(1);
+        // Requesting zero bytes never enters the loop and yields the empty hash.
+        let hash = get_hash_for_file_with_meter_of_bytes(&path, 0, never(), meter)
+            .await
+            .unwrap();
+        assert_eq!(hash, EMPTY_HASH);
+    }
+
+    #[tokio::test]
+    async fn test_get_hash_for_file_with_meter_of_bytes_aborts() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("file.bin");
+        std::fs::write(&path, vec![1u8; 4096]).unwrap();
+
+        let (meter, _tracker) = meter_with_tracker(4096);
+        let aborter = Arc::new(|| true);
+        let result = get_hash_for_file_with_meter_of_bytes(&path, 4096, aborter, meter).await;
+        assert!(matches!(result, Err(FoundationError::AbortError(_))));
+    }
+
+    // ---- directory hashing helpers ---------------------------------------
+
+    /// Build a small directory tree and return its root path (kept alive by the returned TempDir).
+    fn build_tree() -> tempfile::TempDir {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("a.txt"), b"alpha").unwrap();
+        std::fs::write(root.join("b.txt"), b"beta").unwrap();
+        let sub = root.join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        std::fs::write(sub.join("c.txt"), b"gamma").unwrap();
+        dir
+    }
+
+    // ---- get_hash_for_dir ------------------------------------------------
+
+    #[test]
+    fn test_get_hash_for_dir_deterministic() {
+        let tree = build_tree();
+        let h1 = get_hash_for_dir(tree.path(), false, never(), None).unwrap();
+        let h2 = get_hash_for_dir(tree.path(), false, never(), None).unwrap();
+        assert_eq!(h1, h2);
+        assert_eq!(h1.len(), 64);
+    }
+
+    #[test]
+    fn test_get_hash_for_dir_include_file_names_changes_hash() {
+        let tree = build_tree();
+        let without = get_hash_for_dir(tree.path(), false, never(), None).unwrap();
+        let with = get_hash_for_dir(tree.path(), true, never(), None).unwrap();
+        assert_ne!(without, with);
+    }
+
+    #[test]
+    fn test_get_hash_for_dir_with_meter() {
+        let tree = build_tree();
+        // "alpha" + "beta" + "gamma" = 5 + 4 + 5 = 14 bytes of file content.
+        let (meter, tracker) = meter_with_tracker(14);
+        get_hash_for_dir(tree.path(), false, never(), Some(meter)).unwrap();
+        assert_eq!(tracker.load(Ordering::SeqCst), 100);
+    }
+
+    #[test]
+    fn test_get_hash_for_dir_aborts() {
+        let tree = build_tree();
+        let aborter = Arc::new(|| true);
+        let result = get_hash_for_dir(tree.path(), false, aborter, None);
+        assert!(matches!(result, Err(FoundationError::AbortError(_))));
+    }
+
+    // ---- async_get_hash_for_dir ------------------------------------------
+
+    #[tokio::test]
+    async fn test_async_get_hash_for_dir_matches_sync() {
+        let tree = build_tree();
+        // With `include_file_names = false` both implementations hash only file contents in the
+        // same sorted order, so they must agree.
+        let async_hash = async_get_hash_for_dir(tree.path(), false).await.unwrap();
+        let sync_hash = get_hash_for_dir(tree.path(), false, never(), None).unwrap();
+        assert_eq!(async_hash, sync_hash);
+    }
+
+    #[tokio::test]
+    async fn test_async_get_hash_for_dir_include_file_names_changes_hash() {
+        let tree = build_tree();
+        let without = async_get_hash_for_dir(tree.path(), false).await.unwrap();
+        let with = async_get_hash_for_dir(tree.path(), true).await.unwrap();
+        assert_ne!(without, with);
+    }
+
+    // ---- async_get_hash_for_dir_with_meter -------------------------------
+
+    #[tokio::test]
+    async fn test_async_get_hash_for_dir_with_meter_matches_sync() {
+        let tree = build_tree();
+        let (mut meter, tracker) = meter_with_tracker(14);
+        let hash = async_get_hash_for_dir_with_meter(tree.path(), false, never(), &mut meter)
+            .await
+            .unwrap();
+        let sync_hash = get_hash_for_dir(tree.path(), false, never(), None).unwrap();
+        assert_eq!(hash, sync_hash);
+        assert_eq!(tracker.load(Ordering::SeqCst), 100);
+    }
+
+    #[tokio::test]
+    async fn test_async_get_hash_for_dir_with_meter_aborts() {
+        let tree = build_tree();
+        let (mut meter, _tracker) = meter_with_tracker(14);
+        let aborter = Arc::new(|| true);
+        let result =
+            async_get_hash_for_dir_with_meter(tree.path(), false, aborter, &mut meter).await;
+        assert!(matches!(result, Err(FoundationError::AbortError(_))));
+    }
+}
