@@ -108,4 +108,69 @@ mod tests {
         assert_eq!(interrupter.interrupted(), false);
         assert_eq!(interrupter.get_interruption(), None);
     }
+
+    #[test]
+    fn test_clear_when_already_empty() {
+        let mut interrupter = Interrupter::default();
+        interrupter.clear();
+        assert_eq!(interrupter.interrupted(), false);
+        assert_eq!(interrupter.get_interruption(), None);
+    }
+
+    #[test]
+    fn test_interrupt_is_when_none() {
+        // Exercises the `None => false` branch of `interrupt_is`.
+        let interrupter = Interrupter::default();
+        assert_eq!(interrupter.interrupt_is(Interruption::Stop), false);
+        assert_eq!(interrupter.interrupt_is(Interruption::Pause), false);
+        assert_eq!(interrupter.interrupt_is(Interruption::Resume), false);
+        assert_eq!(interrupter.interrupt_is(Interruption::Abort), false);
+    }
+
+    #[test]
+    fn test_all_interruption_variants() {
+        for variant in [
+            Interruption::Stop,
+            Interruption::Pause,
+            Interruption::Resume,
+            Interruption::Abort,
+        ] {
+            let mut interrupter = Interrupter::default();
+            interrupter.interrupt_with(variant);
+            assert_eq!(interrupter.interrupted(), true);
+            assert_eq!(interrupter.get_interruption(), Some(variant));
+            assert_eq!(interrupter.interrupt_is(variant), true);
+        }
+    }
+
+    #[test]
+    fn test_interrupt_with_overwrites() {
+        let mut interrupter = Interrupter::default();
+        interrupter.interrupt_with(Interruption::Pause);
+        interrupter.interrupt_with(Interruption::Stop);
+        assert_eq!(interrupter.get_interruption(), Some(Interruption::Stop));
+        assert_eq!(interrupter.interrupt_is(Interruption::Pause), false);
+        assert_eq!(interrupter.interrupt_is(Interruption::Stop), true);
+    }
+
+    #[test]
+    fn test_clone_is_independent() {
+        let mut interrupter = Interrupter::default();
+        interrupter.interrupt_with(Interruption::Pause);
+
+        let mut cloned = interrupter.clone();
+        assert_eq!(cloned.get_interruption(), Some(Interruption::Pause));
+
+        // Mutating the clone must not affect the original.
+        cloned.clear();
+        assert_eq!(cloned.get_interruption(), None);
+        assert_eq!(interrupter.get_interruption(), Some(Interruption::Pause));
+    }
+
+    #[test]
+    fn test_interruption_equality() {
+        assert_eq!(Interruption::Stop, Interruption::Stop);
+        assert_ne!(Interruption::Stop, Interruption::Pause);
+        assert_ne!(Interruption::Resume, Interruption::Abort);
+    }
 }
