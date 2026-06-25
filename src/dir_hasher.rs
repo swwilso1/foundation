@@ -417,4 +417,182 @@ mod tests {
             }
         }
     }
+
+    /// Create a unique temporary directory for a test, removing any prior copy.
+    fn make_test_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(name);
+        if dir.exists() {
+            std::fs::remove_dir_all(&dir).unwrap();
+        }
+        std::fs::create_dir(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn test_hash_is_cached() {
+        // Once hash() has been computed, the value is cached and later mutations to
+        // the children do not change the reported hash.
+        let mut hasher = DirHasher::new(Path::new("/some/path"));
+        hasher.add_directory_entry(DirEntry::File("a".to_string(), "hash_a".to_string()));
+
+        let first = hasher.hash();
+        // Calling hash() again returns the same value.
+        assert_eq!(first, hasher.hash());
+
+        // Adding a new entry after the hash was cached does not change the result.
+        hasher.add_directory_entry(DirEntry::File("b".to_string(), "hash_b".to_string()));
+        assert_eq!(first, hasher.hash());
+    }
+
+    #[test]
+    fn test_hash_is_deterministic_and_path_sensitive() {
+        // Two hashers with identical paths and children produce identical hashes.
+        let mut a = DirHasher::new(Path::new("/path/one"));
+        a.add_directory_entry(DirEntry::File("file".to_string(), "deadbeef".to_string()));
+
+        let mut b = DirHasher::new(Path::new("/path/one"));
+        b.add_directory_entry(DirEntry::File("file".to_string(), "deadbeef".to_string()));
+
+        assert_eq!(a.hash(), b.hash());
+
+        // A different path produces a different hash even with identical children.
+        let mut c = DirHasher::new(Path::new("/path/two"));
+        c.add_directory_entry(DirEntry::File("file".to_string(), "deadbeef".to_string()));
+
+        assert_ne!(a.hash(), c.hash());
+    }
+
+    #[test]
+    fn test_hash_is_order_sensitive() {
+        // The order in which entries are added affects the resulting hash.
+        let mut a = DirHasher::new(Path::new("/p"));
+        a.add_directory_entry(DirEntry::File("one".to_string(), "h1".to_string()));
+        a.add_directory_entry(DirEntry::File("two".to_string(), "h2".to_string()));
+
+        let mut b = DirHasher::new(Path::new("/p"));
+        b.add_directory_entry(DirEntry::File("two".to_string(), "h2".to_string()));
+        b.add_directory_entry(DirEntry::File("one".to_string(), "h1".to_string()));
+
+        assert_ne!(a.hash(), b.hash());
+    }
+
+    #[test]
+    fn test_nested_dir_entry_contributes_to_hash() {
+        // A DirEntry::Dir child contributes its own hash to the parent hash.
+        let mut child = DirHasher::new(Path::new("/p/child"));
+        child.add_directory_entry(DirEntry::File("f".to_string(), "fh".to_string()));
+
+        let mut with_child = DirHasher::new(Path::new("/p"));
+        with_child.add_directory_entry(DirEntry::Dir("/p/child".to_string(), child));
+
+        let mut without_child = DirHasher::new(Path::new("/p"));
+
+        assert_ne!(with_child.hash(), without_child.hash());
+    }
+
+    #[test]
+    fn test_empty_directory() {
+        let start_dir = make_test_dir("test_dir_hasher_empty");
+
+        let mut dir_hasher = DirHasher::new(&start_dir);
+        let hash = hash_directory(&start_dir, &mut dir_hasher, Arc::new(|| false), None).unwrap();
+
+        // An empty directory hashes the same as a freshly constructed hasher with no
+        // children for the same path.
+        let mut reference = DirHasher::new(&start_dir);
+        assert_eq!(hash, reference.hash());
+
+        // The JSON representation of an empty directory has no children.
+        let json = dir_hasher.get_as_json();
+        assert_eq!(json["type"], "dir");
+        assert_eq!(json["children"].as_array().unwrap().len(), 0);
+
+        std::fs::remove_dir_all(&start_dir).unwrap();
+    }
+
+    #[test]
+    fn test_hash_file_standalone() {
+        let start_dir = make_test_dir("test_dir_hasher_hash_file");
+        let file = start_dir.join("file.txt");
+        std::fs::write(&file, "hello world").unwrap();
+
+        let mut dir_hasher = DirHasher::new(&start_dir);
+        let returned = hash_file(&file, &mut dir_hasher, Arc::new(|| false), None).unwrap();
+
+        // The returned hash matches the standalone file hash function.
+        let expected = get_hash_for_file(&file, Arc::new(|| false), None).unwrap();
+        assert_eq!(returned, expected);
+
+        // The file entry was added to the hasher and is reflected in the JSON.
+        let json = dir_hasher.get_as_json();
+        let children = json["children"].as_array().unwrap();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0]["type"], "file");
+        assert_eq!(children[0]["hash"], returned);
+
+        std::fs::remove_dir_all(&start_dir).unwrap();
+    }
+
+    #[test]
+    fn test_hash_directory_with_progress_meter() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let start_dir = make_test_dir("test_dir_hasher_meter");
+        let file = start_dir.join("file.txt");
+        let contents = "some non-trivial contents for the meter";
+        std::fs::write(&file, contents).unwrap();
+
+        let notified = Arc::new(AtomicBool::new(false));
+        let notified_clone = notified.clone();
+        let meter = ProgressMeter::new_with_notifier_and_size(
+            Box::new(move |_percent| {
+                notified_clone.store(true, Ordering::SeqCst);
+            }),
+            contents.len() as u64,
+        );
+        let meter = Arc::new(Mutex::new(meter));
+
+        let mut dir_hasher = DirHasher::new(&start_dir);
+        hash_directory(
+            &start_dir,
+            &mut dir_hasher,
+            Arc::new(|| false),
+            Some(meter),
+        )
+        .unwrap();
+
+        // Hashing the file should have driven the progress meter to notify.
+        assert!(notified.load(Ordering::SeqCst));
+
+        std::fs::remove_dir_all(&start_dir).unwrap();
+    }
+
+    #[test]
+    fn test_hash_file_aborts() {
+        let start_dir = make_test_dir("test_dir_hasher_abort");
+        let file = start_dir.join("file.txt");
+        std::fs::write(&file, "content that needs reading").unwrap();
+
+        let mut dir_hasher = DirHasher::new(&start_dir);
+        let result = hash_file(&file, &mut dir_hasher, Arc::new(|| true), None);
+
+        match result {
+            Err(FoundationError::AbortError(_)) => {}
+            other => panic!("Expected AbortError, got {:?}", other),
+        }
+
+        std::fs::remove_dir_all(&start_dir).unwrap();
+    }
+
+    #[test]
+    fn test_hash_directory_nonexistent_path() {
+        let missing = std::env::temp_dir().join("test_dir_hasher_does_not_exist_xyz");
+        if missing.exists() {
+            std::fs::remove_dir_all(&missing).unwrap();
+        }
+
+        let mut dir_hasher = DirHasher::new(&missing);
+        let result = hash_directory(&missing, &mut dir_hasher, Arc::new(|| false), None);
+        assert!(result.is_err());
+    }
 }
