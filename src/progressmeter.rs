@@ -200,4 +200,121 @@ mod tests {
         progress_meter.notify(false);
         assert_eq!(rx.recv().await.unwrap(), 50);
     }
+
+    /// Records every percentage value passed to the notifier, allowing tests to
+    /// assert both the values reported and how many times the notifier fired.
+    fn recording_meter(total: u64) -> (ProgressMeter, std::sync::Arc<std::sync::Mutex<Vec<u8>>>) {
+        let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+        let log_clone = log.clone();
+        let meter = ProgressMeter::new_with_notifier_and_size(
+            Box::new(move |percent| {
+                log_clone.lock().unwrap().push(percent);
+            }),
+            total,
+        );
+        (meter, log)
+    }
+
+    #[test]
+    fn test_new_defaults() {
+        // The default meter tracks a single unit, so one increment is 100%.
+        let mut meter = ProgressMeter::new();
+        meter.increment();
+        // The default notifier is a no-op; this exercises it without panicking.
+        meter.notify(true);
+    }
+
+    #[test]
+    fn test_new_default_notifier_is_noop() {
+        // Drive the default no-op notifier across several updates to ensure it
+        // never panics regardless of the force flag.
+        let mut meter = ProgressMeter::new();
+        meter.set_total(10);
+        meter.increment_by(5);
+        meter.notify(false);
+        meter.notify(true);
+        meter.reset();
+        meter.notify(true);
+    }
+
+    #[test]
+    fn test_reset_returns_to_zero() {
+        let (mut meter, log) = recording_meter(100);
+        meter.increment_by(40);
+        meter.notify(false);
+        meter.reset();
+        // After a reset the percentage drops back to 0. Because 0 is not greater
+        // than the last notified percentage (40), a non-forced notify is silent.
+        meter.notify(false);
+        meter.notify(true);
+        assert_eq!(*log.lock().unwrap(), vec![40, 0]);
+    }
+
+    #[test]
+    fn test_notify_skips_when_percent_not_increased() {
+        let (mut meter, log) = recording_meter(100);
+        meter.set_current(30);
+        meter.notify(false);
+        // No progress made: percent is unchanged, so a non-forced notify is a no-op.
+        meter.notify(false);
+        // Progress that does not cross a whole-percent boundary is also silent.
+        meter.set_current(30);
+        meter.notify(false);
+        assert_eq!(*log.lock().unwrap(), vec![30]);
+    }
+
+    #[test]
+    fn test_notify_force_repeats_same_percent() {
+        let (mut meter, log) = recording_meter(100);
+        meter.set_current(25);
+        meter.notify(false);
+        // Forcing re-notifies the same percentage even though it has not changed.
+        meter.notify(true);
+        meter.notify(true);
+        assert_eq!(*log.lock().unwrap(), vec![25, 25, 25]);
+    }
+
+    #[test]
+    fn test_notify_clamps_current_above_total() {
+        let (mut meter, log) = recording_meter(100);
+        // Incrementing beyond the total clamps to 100% rather than overflowing.
+        meter.increment_by(250);
+        meter.notify(false);
+        assert_eq!(*log.lock().unwrap(), vec![100]);
+    }
+
+    #[test]
+    fn test_set_current_clamps_above_total() {
+        let (mut meter, log) = recording_meter(50);
+        // set_current saturates at the total, so this reports 100%, not 200%.
+        meter.set_current(100);
+        meter.notify(false);
+        assert_eq!(*log.lock().unwrap(), vec![100]);
+    }
+
+    #[test]
+    fn test_set_total_rescales_percentage() {
+        let (mut meter, log) = recording_meter(100);
+        meter.set_current(10);
+        meter.notify(false);
+        // Shrinking the total makes the same current count a larger fraction.
+        meter.set_total(20);
+        meter.notify(false);
+        assert_eq!(*log.lock().unwrap(), vec![10, 50]);
+    }
+
+    #[test]
+    fn test_set_notifier_replaces_callback() {
+        // Start with the no-op default, then install a recording notifier.
+        let mut meter = ProgressMeter::new();
+        meter.set_total(100);
+        let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+        let log_clone = log.clone();
+        meter.set_notifier(Box::new(move |percent| {
+            log_clone.lock().unwrap().push(percent);
+        }));
+        meter.set_current(75);
+        meter.notify(false);
+        assert_eq!(*log.lock().unwrap(), vec![75]);
+    }
 }
