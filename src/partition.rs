@@ -116,13 +116,54 @@ mod tests {
 
     #[test]
     fn test_partition_table_try_from_filesystem() {
-        let gpt = PartitionTable::try_from(FileSystem::Ext2).unwrap();
-        assert_eq!(gpt, PartitionTable::GPT);
+        // Every DOS-mapped filesystem.
+        for fs in [FileSystem::Fat16, FileSystem::Fat32, FileSystem::ExFat] {
+            assert_eq!(PartitionTable::try_from(fs).unwrap(), PartitionTable::DOS);
+        }
 
-        let dos = PartitionTable::try_from(FileSystem::Fat32).unwrap();
-        assert_eq!(dos, PartitionTable::DOS);
+        // Every GPT-mapped filesystem.
+        for fs in [
+            FileSystem::Ext2,
+            FileSystem::Ext3,
+            FileSystem::Ext4,
+            FileSystem::NTFS,
+            FileSystem::HFSPlus,
+            FileSystem::APFS,
+        ] {
+            assert_eq!(PartitionTable::try_from(fs).unwrap(), PartitionTable::GPT);
+        }
 
-        let unknown = PartitionTable::try_from(FileSystem::CIFS);
-        assert!(unknown.is_err());
+        // Filesystems that have no partition table mapping.
+        for fs in [FileSystem::ISO9660, FileSystem::CIFS] {
+            assert!(PartitionTable::try_from(fs).is_err());
+        }
+    }
+
+    #[test]
+    fn test_partition_table_display_from_str_round_trip() {
+        for table in [PartitionTable::GPT, PartitionTable::DOS] {
+            let rendered = table.to_string();
+            assert_eq!(PartitionTable::from_str(&rendered).unwrap(), table);
+        }
+    }
+
+    #[test]
+    fn test_partition_table_try_from_i64_round_trip() {
+        // The numeric discriminants used by `TryFrom<i64>`.
+        assert_eq!(PartitionTable::try_from(0_i64).unwrap(), PartitionTable::GPT);
+        assert_eq!(PartitionTable::try_from(1_i64).unwrap(), PartitionTable::DOS);
+
+        // Out-of-range values on both ends should fail.
+        assert!(PartitionTable::try_from(-1_i64).is_err());
+        assert!(PartitionTable::try_from(i64::MAX).is_err());
+    }
+
+    #[test]
+    fn test_partition_table_from_str_error_payload() {
+        // The error should carry the unrecognized input string.
+        match PartitionTable::from_str("xfs") {
+            Err(FoundationError::UnknownPartitionTable(s)) => assert_eq!(s, "xfs"),
+            other => panic!("expected UnknownPartitionTable error, got {:?}", other),
+        }
     }
 }
