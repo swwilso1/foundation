@@ -1442,4 +1442,192 @@ mod tests {
 
         test_receiver(receiver, bound).await
     }
+
+    #[test]
+    fn test_error_display() {
+        let push: MultiQueueError<i32> = MultiQueueError::Push(42);
+        assert_eq!(format!("{}", push), "failed to add item to the queue");
+
+        let fork: MultiQueueError<i32> = MultiQueueError::Fork;
+        assert_eq!(format!("{}", fork), "failed to fork the queue");
+    }
+
+    #[test]
+    fn test_error_debug() {
+        // The Debug impl intentionally hides the contained object (which may not be Debug).
+        let push: MultiQueueError<i32> = MultiQueueError::Push(7);
+        assert_eq!(format!("{:?}", push), "MultiQueueError { .. }");
+
+        let fork: MultiQueueError<i32> = MultiQueueError::Fork;
+        assert_eq!(format!("{:?}", fork), "MultiQueueError { .. }");
+    }
+
+    #[test]
+    fn test_error_is_std_error() {
+        // Make sure MultiQueueError can be used as a boxed std::error::Error.
+        let err: Box<dyn Error> = Box::new(MultiQueueError::<i32>::Fork);
+        assert_eq!(err.to_string(), "failed to fork the queue");
+    }
+
+    #[test]
+    fn test_error_equality_and_copy() {
+        let a: MultiQueueError<i32> = MultiQueueError::Push(1);
+        let b: MultiQueueError<i32> = MultiQueueError::Push(1);
+        let c: MultiQueueError<i32> = MultiQueueError::Push(2);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+        // Copy: using `a` after copying it proves the value was not moved.
+        let copied = a;
+        assert_eq!(a, copied);
+        assert_ne!(MultiQueueError::<i32>::Fork, MultiQueueError::Push(0));
+    }
+
+    #[test]
+    fn test_core_shared_size_directly() {
+        // Core::shared_size has a branch that is unreachable through MultiQueue::shared_size,
+        // so exercise it directly here.
+        let mut core: Core<i32> = Core::new();
+        assert_eq!(core.shared_size(), 0);
+
+        core.push_back(5);
+        assert_eq!(core.size(), 1);
+
+        // When every fork sits at the end of a single-element queue the element is considered
+        // already consumed, so the shared size collapses to 0.
+        core.count_at_end_of_queue = core.reference_count;
+        assert_eq!(core.shared_size(), 0);
+
+        // Otherwise the shared size is just the number of elements.
+        core.count_at_end_of_queue = 0;
+        assert_eq!(core.shared_size(), 1);
+
+        core.push_back(6);
+        core.count_at_end_of_queue = core.reference_count;
+        assert_eq!(core.shared_size(), 2);
+    }
+
+    #[test]
+    fn test_operations_on_fresh_queue() {
+        // A brand new queue with an empty core takes the early-return paths in front,
+        // front_mut and pop_front.
+        let mut queue: MultiQueue<i32> = MultiQueue::new();
+        assert_eq!(queue.front(), None);
+        assert_eq!(queue.front_mut(), None);
+        // pop_front on an empty queue is a no-op.
+        queue.pop_front();
+        assert_eq!(queue.size(), 0);
+        assert!(queue.empty());
+    }
+
+    #[test]
+    fn test_front_mut_with_fork_at_end_of_queue() {
+        // Drive a fork into the `at_end_of_queue` state and then exercise front_mut both when
+        // there is nothing new to read (None) and when a new element arrives.
+        let mut queue = MultiQueue::new();
+        queue.push_back(1).unwrap();
+
+        let mut fork = queue.fork().unwrap();
+        assert_eq!(fork.front(), Some(&1));
+
+        // Consume the only element; the fork is now parked at the end of the queue.
+        fork.pop_front();
+        assert!(fork.empty());
+
+        // front_mut while at the end with no new element returns None.
+        assert_eq!(fork.front_mut(), None);
+
+        // A new element pushed by the original queue should now be visible to the fork's
+        // front_mut, which walks past the parked block.
+        queue.push_back(2).unwrap();
+        assert_eq!(fork.front_mut(), Some(&mut 2));
+        *fork.front_mut().unwrap() = 20;
+        assert_eq!(fork.front(), Some(&20));
+        assert_eq!(queue.front(), Some(&1));
+    }
+
+    #[test]
+    fn test_drop_with_remaining_elements() {
+        // Dropping a queue that still holds elements must pop everything and decrement the
+        // reference count on the final block so the backing memory is released.
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<i32>();
+        {
+            let mut queue: MultiQueue<TestHelper<i32>> = MultiQueue::new();
+            queue.push_back(TestHelper(0, sender.clone())).unwrap();
+            queue.push_back(TestHelper(1, sender.clone())).unwrap();
+            queue.push_back(TestHelper(2, sender.clone())).unwrap();
+            // Read partway so the queue's internal head advances before the drop.
+            assert!(queue.front().is_some());
+            queue.pop_front();
+            // Drop here with elements still present.
+        }
+        drop(sender);
+
+        // All three TestHelper values must have been dropped, regardless of order.
+        let mut received: Vec<i32> = Vec::new();
+        let mut receiver = receiver;
+        while let Ok(value) = receiver.try_recv() {
+            received.push(value);
+        }
+        received.sort();
+        assert_eq!(received, vec![0, 1, 2]);
+    }
+
+    /// Poison the mutex guarding a queue's core so that subsequent lock attempts fail. This lets
+    /// us exercise the error-handling branches in the public API. Poisoning is performed on the
+    /// current thread (Core is not Send) by panicking while holding the guard.
+    fn poison_queue<T>(queue: &MultiQueue<T>) {
+        let core = queue.core.clone();
+        let previous_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _guard = core.lock().unwrap();
+            panic!("intentionally poison the mutex for testing");
+        }));
+        std::panic::set_hook(previous_hook);
+        assert!(queue.core.is_poisoned());
+    }
+
+    #[test]
+    fn test_poisoned_core_error_paths() {
+        let mut queue: MultiQueue<i32> = MultiQueue::new();
+        queue.push_back(1).unwrap();
+        poison_queue(&queue);
+
+        // empty() reports true (and logs) when it cannot lock the core.
+        assert!(queue.empty());
+
+        // size, shared_size and references all fall back to 0 on a lock failure.
+        assert_eq!(queue.size(), 0);
+        assert_eq!(queue.shared_size(), 0);
+        assert_eq!(queue.references(), 0);
+
+        // front and front_mut return None on a lock failure.
+        assert_eq!(queue.front(), None);
+        assert_eq!(queue.front_mut(), None);
+
+        // pop_front simply logs and does nothing.
+        queue.pop_front();
+
+        // push_back surfaces the failure and hands the object back to the caller.
+        match queue.push_back(99) {
+            Err(MultiQueueError::Push(value)) => assert_eq!(value, 99),
+            other => panic!("expected Push error, got {:?}", other),
+        }
+
+        // fork fails with a Fork error.
+        match queue.fork() {
+            Err(MultiQueueError::Fork) => {}
+            Err(other) => panic!("expected Fork error, got {:?}", other),
+            Ok(_) => panic!("expected fork to fail on a poisoned core"),
+        }
+
+        // Dropping the poisoned queue exercises the lock-failure branch in Drop.
+    }
+
+    #[test]
+    fn test_iterator_on_empty_queue() {
+        let mut queue: MultiQueue<i32> = MultiQueue::new();
+        let mut iter = queue.iter();
+        assert_eq!(iter.next(), None);
+    }
 }
