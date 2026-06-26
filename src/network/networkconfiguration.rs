@@ -41,9 +41,9 @@ pub struct NetworkConfiguration {
     pub dhcp_range: Option<DHCPRange>,
 }
 
-impl NetworkConfiguration {
+impl Default for NetworkConfiguration {
     /// Create a default `NetworkConfiguration`.
-    pub fn default() -> NetworkConfiguration {
+    fn default() -> NetworkConfiguration {
         NetworkConfiguration {
             address_mode: AddressMode::DHCP,
             interface: NetworkInterface::default(),
@@ -52,7 +52,9 @@ impl NetworkConfiguration {
             dhcp_range: None,
         }
     }
+}
 
+impl NetworkConfiguration {
     /// Creates a new `NetworkConfiguration` with the specified address mode, network interface,
     /// enabled status, wireless configuration, and DHCP range.
     ///

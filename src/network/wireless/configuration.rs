@@ -57,7 +57,7 @@ pub struct WirelessConfiguration {
     pub rsn_pairwise: Option<String>,
 }
 
-impl WirelessConfiguration {
+impl Default for WirelessConfiguration {
     /// Returns a new `WirelessConfiguration` instance with default values.
     ///
     /// # Returns
@@ -72,7 +72,7 @@ impl WirelessConfiguration {
     /// wpa_key_mgmt - None.
     /// wpa_pairwise - None.
     /// rsn_pairwise - None.
-    pub fn default() -> WirelessConfiguration {
+    fn default() -> WirelessConfiguration {
         WirelessConfiguration {
             ssid: String::new(),
             standard: WirelessStandard::N,
@@ -87,7 +87,9 @@ impl WirelessConfiguration {
             rsn_pairwise: None,
         }
     }
+}
 
+impl WirelessConfiguration {
     /// Returns a new `WirelessConfiguration` instance with the specified values.
     ///
     /// # Arguments
@@ -101,6 +103,7 @@ impl WirelessConfiguration {
     /// * `wpa_key_mgmt` - The WPA key management setting of the wireless network.
     /// * `wpa_pairwise` - The WPA pairwise setting of the wireless network.
     /// * `rsn_pairwise` - The RSN pairwise setting of the wireless network.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         ssid: String,
         standard: WirelessStandard,

@@ -11,6 +11,12 @@ pub struct NetworkInterfaces {
     interfaces: HashMap<String, NetworkInterface>,
 }
 
+impl Default for NetworkInterfaces {
+    fn default() -> Self {
+        NetworkInterfaces::new()
+    }
+}
+
 impl NetworkInterfaces {
     /// Create a new `NetworkInterfaces` instance.
     pub fn new() -> Self {
@@ -22,6 +28,11 @@ impl NetworkInterfaces {
     /// Get the number of network interfaces.
     pub fn len(&self) -> usize {
         self.interfaces.len()
+    }
+
+    /// Return `true` if there are no network interfaces.
+    pub fn is_empty(&self) -> bool {
+        self.interfaces.is_empty()
     }
 
     /// Add a new interface to the container.
@@ -61,18 +72,12 @@ impl NetworkInterfaces {
     ///
     /// A vector of references to all interfaces in the container.
     pub fn get_interfaces(&self) -> Vec<&NetworkInterface> {
-        self.interfaces
-            .values()
-            .map(|interface| interface)
-            .collect()
+        self.interfaces.values().collect()
     }
 
     /// Get a vector of mutable references to all interfaces in the container.
     pub fn get_interfaces_mut(&mut self) -> Vec<&mut NetworkInterface> {
-        self.interfaces
-            .values_mut()
-            .map(|interface| interface)
-            .collect()
+        self.interfaces.values_mut().collect()
     }
 
     /// Get a vector of interface names.
@@ -98,12 +103,9 @@ impl NetworkInterfaces {
     ///
     /// An Option containing a reference to the interface if it exists, or None if it does not.
     pub fn get_interface_by_index(&self, index: u32) -> Option<&NetworkInterface> {
-        for interface in self.interfaces.values() {
-            if interface.index == index {
-                return Some(interface);
-            }
-        }
-        None
+        self.interfaces
+            .values()
+            .find(|interface| interface.index == index)
     }
 
     /// Get a mutable reference to an interface by index.
@@ -116,12 +118,9 @@ impl NetworkInterfaces {
     ///
     /// An Option containing a mutable reference to the interface if it exists, or None if it does not.
     pub fn get_interface_by_index_mut(&mut self, index: u32) -> Option<&mut NetworkInterface> {
-        for interface in self.interfaces.values_mut() {
-            if interface.index == index {
-                return Some(interface);
-            }
-        }
-        None
+        self.interfaces
+            .values_mut()
+            .find(|interface| interface.index == index)
     }
 
     /// Get a reference to the loopback interface.
@@ -130,12 +129,9 @@ impl NetworkInterfaces {
     ///
     /// An Option containing a reference to the loopback interface if it exists, or None if it does not.
     pub fn get_loopback_interface(&self) -> Option<&NetworkInterface> {
-        for interface in self.interfaces.values() {
-            if interface.is_loopback_interface() {
-                return Some(interface);
-            }
-        }
-        None
+        self.interfaces
+            .values()
+            .find(|interface| interface.is_loopback_interface())
     }
 
     /// Get a mutable reference to the loopback interface.
@@ -144,12 +140,9 @@ impl NetworkInterfaces {
     ///
     /// An Option containing a mutable reference to the loopback interface if it exists, or None if it does not.
     pub fn get_loopback_interface_mut(&mut self) -> Option<&mut NetworkInterface> {
-        for interface in self.interfaces.values_mut() {
-            if interface.is_loopback_interface() {
-                return Some(interface);
-            }
-        }
-        None
+        self.interfaces
+            .values_mut()
+            .find(|interface| interface.is_loopback_interface())
     }
 
     /// Get a vector of references to interfaces with global addresses.

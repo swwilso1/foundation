@@ -80,16 +80,16 @@ impl IpAddrQuery for Ipv4Addr {
         // Reserved Addresses
         // 4026531840 -> 240.0.0.0
         // 4294967295 -> 255.255.255.255
-        if (ip >= 2886729728u32 && ip <= 2887778303u32)
-            || (ip >= 2130706432u32 && ip <= 2147483647u32)
-            || (ip >= 2851995648u32 && ip <= 2852061183u32)
-            || (ip >= 167772160u32 && ip <= 184549375u32)
-            || (ip >= 3232235520u32 && ip <= 3232301055u32)
-            || (ip >= 3221225984 && ip <= 3221226239)
-            || (ip >= 3325256704 && ip <= 3325256959)
-            || (ip >= 3405803776 && ip <= 3405804031)
-            || (ip >= 1681915904 && ip <= 1686110207)
-            || (ip >= 3323068416 && ip <= 3323199487)
+        if (2886729728u32..=2887778303u32).contains(&ip)
+            || (2130706432u32..=2147483647u32).contains(&ip)
+            || (2851995648u32..=2852061183u32).contains(&ip)
+            || (167772160u32..=184549375u32).contains(&ip)
+            || (3232235520u32..=3232301055u32).contains(&ip)
+            || (3221225984..=3221226239).contains(&ip)
+            || (3325256704..=3325256959).contains(&ip)
+            || (3405803776..=3405804031).contains(&ip)
+            || (1681915904..=1686110207).contains(&ip)
+            || (3323068416..=3323199487).contains(&ip)
             || (ip >= 4026531840)
             || ip == 0
         {
@@ -157,15 +157,15 @@ impl IpAddrQuery for Ipv6Addr {
         // 338620831926207318622244848606417780735 -> febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
         if self.is_unspecified()
             || self.is_loopback()
-            || (ip >= 281470681743360 && ip <= 281474976710655)
-            || (ip >= 42540488320432167789079031612388147200
-                && ip <= 42540488320433376714898646241562853375)
-            || (ip >= 42540766411282592856903984951653826560
-                && ip <= 42540766490510755371168322545197776895)
-            || (ip >= 334965454937798799971759379190646833152
-                && ip <= 337623910929368631717566993311207522303)
-            || (ip >= 338288524927261089654018896841347694592
-                && ip <= 338620831926207318622244848606417780735)
+            || (281470681743360..=281474976710655).contains(&ip)
+            || (42540488320432167789079031612388147200..=42540488320433376714898646241562853375)
+                .contains(&ip)
+            || (42540766411282592856903984951653826560..=42540766490510755371168322545197776895)
+                .contains(&ip)
+            || (334965454937798799971759379190646833152..=337623910929368631717566993311207522303)
+                .contains(&ip)
+            || (338288524927261089654018896841347694592..=338620831926207318622244848606417780735)
+                .contains(&ip)
         {
             return false;
         }
@@ -283,77 +283,59 @@ mod tests {
 
     #[test]
     fn test_ipv4_is_global_address() {
-        assert_eq!(Ipv4Addr::new(8, 8, 8, 8).is_global_address(), true);
-        assert_eq!(Ipv4Addr::UNSPECIFIED.is_global_address(), false);
+        assert!(Ipv4Addr::new(8, 8, 8, 8).is_global_address());
+        assert!(!Ipv4Addr::UNSPECIFIED.is_global_address());
 
         // Addresses reserved for private use: (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
-        assert_eq!(Ipv4Addr::new(10, 254, 0, 0).is_global_address(), false);
-        assert_eq!(Ipv4Addr::new(192, 168, 10, 65).is_global_address(), false);
-        assert_eq!(Ipv4Addr::new(172, 16, 0, 65).is_global_address(), false);
+        assert!(!Ipv4Addr::new(10, 254, 0, 0).is_global_address());
+        assert!(!Ipv4Addr::new(192, 168, 10, 65).is_global_address());
+        assert!(!Ipv4Addr::new(172, 16, 0, 65).is_global_address());
 
         // Addresses in the shared address space (100.64.0.0/10)
-        assert_eq!(Ipv4Addr::new(100, 100, 0, 0).is_global_address(), false);
+        assert!(!Ipv4Addr::new(100, 100, 0, 0).is_global_address());
 
         // The loopback addresses (127.0.0.0/8)
-        assert_eq!(Ipv4Addr::new(127, 0, 0, 55).is_global_address(), false);
-        assert_eq!(Ipv4Addr::LOCALHOST.is_global_address(), false);
+        assert!(!Ipv4Addr::new(127, 0, 0, 55).is_global_address());
+        assert!(!Ipv4Addr::LOCALHOST.is_global_address());
 
         // The link-local addresses (169.254.0.0/16)
-        assert_eq!(Ipv4Addr::new(169, 254, 45, 1).is_global_address(), false);
+        assert!(!Ipv4Addr::new(169, 254, 45, 1).is_global_address());
 
         // Addresses reserved for documentation (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24)
-        assert_eq!(Ipv4Addr::new(192, 0, 2, 255).is_global_address(), false);
-        assert_eq!(Ipv4Addr::new(198, 51, 100, 65).is_global_address(), false);
-        assert_eq!(Ipv4Addr::new(203, 0, 113, 6).is_global_address(), false);
+        assert!(!Ipv4Addr::new(192, 0, 2, 255).is_global_address());
+        assert!(!Ipv4Addr::new(198, 51, 100, 65).is_global_address());
+        assert!(!Ipv4Addr::new(203, 0, 113, 6).is_global_address());
 
         // Addresses reserved for benchmarking (198.18.0.0/15)
-        assert_eq!(Ipv4Addr::new(198, 18, 0, 0).is_global_address(), false);
+        assert!(!Ipv4Addr::new(198, 18, 0, 0).is_global_address());
 
         // Reserved addresses (240.0.0.0/4)
-        assert_eq!(Ipv4Addr::new(250, 10, 20, 30).is_global_address(), false);
+        assert!(!Ipv4Addr::new(250, 10, 20, 30).is_global_address());
 
         // The broadcast address (255.255.255.255)
-        assert_eq!(Ipv4Addr::BROADCAST.is_global_address(), false);
+        assert!(!Ipv4Addr::BROADCAST.is_global_address());
     }
 
     #[test]
     fn test_ipv6_is_global_address() {
-        assert_eq!(
-            Ipv6Addr::new(0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8888).is_global_address(),
-            true
-        );
-        assert_eq!(Ipv6Addr::UNSPECIFIED.is_global_address(), false);
-        assert_eq!(Ipv6Addr::LOCALHOST.is_global_address(), false);
+        assert!(Ipv6Addr::new(0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8888).is_global_address());
+        assert!(!Ipv6Addr::UNSPECIFIED.is_global_address());
+        assert!(!Ipv6Addr::LOCALHOST.is_global_address());
 
         // The ipv4-mapped address (0:0:0:0:0:ffff::/96)
-        assert_eq!(
-            Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0, 0).is_global_address(),
-            false
-        );
+        assert!(!Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0, 0).is_global_address());
 
         // Addresses reserved for benchmarking (2001:2::/48)
-        assert_eq!(
-            Ipv6Addr::new(0x2001, 0x2, 0, 0, 0, 0, 0, 0).is_global_address(),
-            false
-        );
+        assert!(!Ipv6Addr::new(0x2001, 0x2, 0, 0, 0, 0, 0, 0).is_global_address());
 
         // Addresses reserved for documentation (2001:db8::/32)
-        assert_eq!(
-            Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0).is_global_address(),
-            false
-        );
+        assert!(!Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0).is_global_address());
 
         // Unique local addresses (fc00::/7)
-        assert_eq!(
-            Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0).is_global_address(),
-            false
-        );
+        assert!(!Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0).is_global_address());
 
         // Unique addresses with link local scope (fe80::/10)
-        assert_eq!(
-            Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0).is_global_address(),
-            false
-        );
+        assert!(!Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0).is_global_address());
     }
 
     #[test]

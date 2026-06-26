@@ -34,6 +34,12 @@ pub struct NetworkManager {
     configurations: HashMap<String, NetworkConfiguration>,
 }
 
+impl Default for NetworkManager {
+    fn default() -> Self {
+        NetworkManager::new()
+    }
+}
+
 impl NetworkManager {
     /// Constructs a new `NetworkManager`.
     pub fn new() -> Self {

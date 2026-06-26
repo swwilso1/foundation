@@ -20,7 +20,7 @@ pub trait NetworkService {
     fn get_configuration_file(&self) -> PathBuf;
 
     fn remove_config_file(&self) -> Result<(), FoundationError> {
-        match std::fs::remove_file(&self.get_configuration_file()) {
+        match std::fs::remove_file(self.get_configuration_file()) {
             Ok(_) => Ok(()),
             Err(e) => Err(FoundationError::IO(e)),
         }

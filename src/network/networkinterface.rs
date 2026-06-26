@@ -31,10 +31,10 @@ pub struct NetworkInterface {
     pub exists: bool,
 }
 
-impl NetworkInterface {
+impl Default for NetworkInterface {
     /// Create a default version of a `NetworkInterface`.
     /// All internals have a default value.
-    pub fn default() -> NetworkInterface {
+    fn default() -> NetworkInterface {
         NetworkInterface {
             name: String::new(),
             addresses: vec![],
@@ -45,7 +45,9 @@ impl NetworkInterface {
             exists: false,
         }
     }
+}
 
+impl NetworkInterface {
     /// Create a new network interface
     ///
     /// # Arguments
@@ -55,7 +57,7 @@ impl NetworkInterface {
     /// * `mac_addr` - The MAC address of the interface or None.
     /// * `index` - The operating systems index for the interface.
     /// * `nameserver_addresses` - A list of IP address representing DNS nameservers
-    ///    for the address.
+    ///   for the address.
     /// * `gateway_addresses` - A list of IP addresses representing gateways/routers
     ///   for the address.
     pub fn new(
@@ -440,10 +442,7 @@ impl NetworkInterface {
     /// A vector of `NetworkInterface` instances.
     pub fn load() -> Vec<NetworkInterface> {
         if let Ok(interfaces) = network_interface::NetworkInterface::show() {
-            interfaces
-                .into_iter()
-                .map(|interface| NetworkInterface::from(interface))
-                .collect()
+            interfaces.into_iter().map(NetworkInterface::from).collect()
         } else {
             vec![]
         }
@@ -493,7 +492,7 @@ mod tests {
         assert_eq!(interface.index, 0);
         assert_eq!(interface.nameserver_addresses, Vec::<IpAddr>::new());
         assert_eq!(interface.gateway_addresses, Vec::<IpAddr>::new());
-        assert_eq!(interface.exists, false);
+        assert!(!(interface.exists));
     }
 
     #[test]
@@ -519,7 +518,7 @@ mod tests {
         assert_eq!(interface.index, 0);
         assert_eq!(interface.nameserver_addresses, Vec::<IpAddr>::new());
         assert_eq!(interface.gateway_addresses, Vec::<IpAddr>::new());
-        assert_eq!(interface.exists, false);
+        assert!(!(interface.exists));
     }
 
     #[test]
@@ -714,13 +713,13 @@ mod tests {
             assert_eq!(iaddr.ip, IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)));
             iaddr.ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 3));
         } else {
-            assert!(false);
+            panic!("expected an interface address");
         }
         let other_ipv4_address = interface.get_ipv4_interface_address();
         if let Some(iaddr) = other_ipv4_address {
             assert_eq!(iaddr.ip, IpAddr::V4(Ipv4Addr::new(192, 168, 1, 3)));
         } else {
-            assert!(false);
+            panic!("expected an interface address");
         }
     }
 
@@ -775,7 +774,7 @@ mod tests {
             );
             iaddr.ip = IpAddr::V6(Ipv6Addr::new(2001, 0, 0, 0, 0, 0, 0, 3));
         } else {
-            assert!(false);
+            panic!("expected an interface address");
         }
         let other_ipv6_address = interface.get_ipv6_interface_address();
         if let Some(iaddr) = other_ipv6_address {
@@ -784,7 +783,7 @@ mod tests {
                 IpAddr::V6(Ipv6Addr::new(2001, 0, 0, 0, 0, 0, 0, 3))
             );
         } else {
-            assert!(false);
+            panic!("expected an interface address");
         }
     }
 
@@ -839,7 +838,7 @@ mod tests {
             );
             iaddr.ip = IpAddr::V6(Ipv6Addr::new(2001, 0, 0, 0, 0, 0, 0, 3));
         } else {
-            assert!(false);
+            panic!("expected an interface address");
         }
         let other_global_address = interface.get_global_interface_address();
         if let Some(iaddr) = other_global_address {
@@ -848,7 +847,7 @@ mod tests {
                 IpAddr::V6(Ipv6Addr::new(2001, 0, 0, 0, 0, 0, 0, 3))
             );
         } else {
-            assert!(false);
+            panic!("expected an interface address");
         }
     }
 
@@ -900,13 +899,13 @@ mod tests {
             assert_eq!(iaddr.ip, IpAddr::V4(Ipv4Addr::new(11, 168, 1, 2)));
             iaddr.ip = IpAddr::V4(Ipv4Addr::new(11, 168, 1, 3));
         } else {
-            assert!(false);
+            panic!("expected an interface address");
         }
         let other_global_ipv4_address = interface.get_global_ipv4_interface_address();
         if let Some(iaddr) = other_global_ipv4_address {
             assert_eq!(iaddr.ip, IpAddr::V4(Ipv4Addr::new(11, 168, 1, 3)));
         } else {
-            assert!(false);
+            panic!("expected an interface address");
         }
     }
 
@@ -961,7 +960,7 @@ mod tests {
             );
             iaddr.ip = IpAddr::V6(Ipv6Addr::new(2001, 0, 0, 0, 0, 0, 0, 3));
         } else {
-            assert!(false);
+            panic!("expected an interface address");
         }
         let other_global_ipv6_address = interface.get_global_ipv6_interface_address();
         if let Some(iaddr) = other_global_ipv6_address {
@@ -970,7 +969,7 @@ mod tests {
                 IpAddr::V6(Ipv6Addr::new(2001, 0, 0, 0, 0, 0, 0, 3))
             );
         } else {
-            assert!(false);
+            panic!("expected an interface address");
         }
     }
 
@@ -1167,103 +1166,103 @@ mod tests {
     #[test]
     fn test_is_loopback_interface() {
         let mut interface = NetworkInterface::new_with_name("eth0");
-        assert_eq!(interface.is_loopback_interface(), false);
+        assert!(!(interface.is_loopback_interface()));
         interface.addresses.push(InterfaceAddr::new(
             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
             None,
             None,
         ));
-        assert_eq!(interface.is_loopback_interface(), true);
+        assert!(interface.is_loopback_interface());
     }
 
     #[test]
     fn test_has_global_address() {
         let mut interface = NetworkInterface::new_with_name("eth0");
-        assert_eq!(interface.has_global_address(), false);
+        assert!(!(interface.has_global_address()));
         interface.addresses.push(InterfaceAddr::new(
             IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)),
             None,
             None,
         ));
-        assert_eq!(interface.has_global_address(), false);
+        assert!(!(interface.has_global_address()));
         interface.addresses.push(InterfaceAddr::new(
             IpAddr::V6(Ipv6Addr::new(2001, 0, 0, 0, 0, 0, 0, 1)),
             None,
             None,
         ));
-        assert_eq!(interface.has_global_address(), true);
+        assert!(interface.has_global_address());
     }
 
     #[test]
     fn test_has_global_ipv4_address() {
         let mut interface = NetworkInterface::new_with_name("eth0");
-        assert_eq!(interface.has_global_ipv4_address(), false);
+        assert!(!(interface.has_global_ipv4_address()));
         interface.addresses.push(InterfaceAddr::new(
             IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)),
             None,
             None,
         ));
-        assert_eq!(interface.has_global_ipv4_address(), false);
+        assert!(!(interface.has_global_ipv4_address()));
         interface.addresses.push(InterfaceAddr::new(
             IpAddr::V4(Ipv4Addr::new(11, 168, 1, 2)),
             None,
             None,
         ));
-        assert_eq!(interface.has_global_ipv4_address(), true);
+        assert!(interface.has_global_ipv4_address());
     }
 
     #[test]
     fn test_has_global_ipv6_address() {
         let mut interface = NetworkInterface::new_with_name("eth0");
-        assert_eq!(interface.has_global_ipv6_address(), false);
+        assert!(!(interface.has_global_ipv6_address()));
         interface.addresses.push(InterfaceAddr::new(
             IpAddr::V6(Ipv6Addr::new(2001, 0, 0, 0, 0, 0, 0, 1)),
             None,
             None,
         ));
-        assert_eq!(interface.has_global_ipv6_address(), true);
+        assert!(interface.has_global_ipv6_address());
         interface.addresses.push(InterfaceAddr::new(
             IpAddr::V6(Ipv6Addr::new(2001, 0, 0, 0, 0, 0, 0, 2)),
             None,
             None,
         ));
-        assert_eq!(interface.has_global_ipv6_address(), true);
+        assert!(interface.has_global_ipv6_address());
     }
 
     #[test]
     fn test_has_ipv4_address() {
         let mut interface = NetworkInterface::new_with_name("eth0");
-        assert_eq!(interface.has_ipv4_address(), false);
+        assert!(!(interface.has_ipv4_address()));
         interface.addresses.push(InterfaceAddr::new(
             IpAddr::V6(Ipv6Addr::new(2001, 0, 0, 0, 0, 0, 0, 1)),
             None,
             None,
         ));
-        assert_eq!(interface.has_ipv4_address(), false);
+        assert!(!(interface.has_ipv4_address()));
         interface.addresses.push(InterfaceAddr::new(
             IpAddr::V4(Ipv4Addr::new(11, 168, 1, 2)),
             None,
             None,
         ));
-        assert_eq!(interface.has_ipv4_address(), true);
+        assert!(interface.has_ipv4_address());
     }
 
     #[test]
     fn test_has_ipv6_address() {
         let mut interface = NetworkInterface::new_with_name("eth0");
-        assert_eq!(interface.has_ipv6_address(), false);
+        assert!(!(interface.has_ipv6_address()));
         interface.addresses.push(InterfaceAddr::new(
             IpAddr::V4(Ipv4Addr::new(11, 168, 1, 2)),
             None,
             None,
         ));
-        assert_eq!(interface.has_ipv6_address(), false);
+        assert!(!(interface.has_ipv6_address()));
         interface.addresses.push(InterfaceAddr::new(
             IpAddr::V6(Ipv6Addr::new(2001, 0, 0, 0, 0, 0, 0, 1)),
             None,
             None,
         ));
-        assert_eq!(interface.has_ipv6_address(), true);
+        assert!(interface.has_ipv6_address());
     }
 
     cfg_if! {
@@ -1271,7 +1270,7 @@ mod tests {
             #[tokio::test]
             async fn test_is_wireless_interface() {
                 let interface = NetworkInterface::new_with_name("eth0");
-                assert_eq!(interface.is_wireless_interface().await, false);
+                assert!(!(interface.is_wireless_interface().await));
             }
         }
     }

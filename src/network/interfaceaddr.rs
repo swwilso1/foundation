@@ -43,11 +43,8 @@ impl InterfaceAddr {
     /// An `Option` containing the IP address in CIDR notation if the interface address contains
     /// a netmask. Otherwise, `None` is returned.
     pub fn get_in_cidr_notation(&self) -> Option<String> {
-        if let Some(netmask) = self.netmask {
-            Some(format!("{}/{}", self.ip, netmask.bits_in_mask()))
-        } else {
-            None
-        }
+        self.netmask
+            .map(|netmask| format!("{}/{}", self.ip, netmask.bits_in_mask()))
     }
 }
 
@@ -55,17 +52,8 @@ impl From<network_interface::Addr> for InterfaceAddr {
     fn from(addr: network_interface::Addr) -> Self {
         match addr {
             network_interface::Addr::V4(v4addr) => {
-                let broadcast = if let Some(ip) = v4addr.broadcast {
-                    Some(IpAddr::V4(ip))
-                } else {
-                    None
-                };
-
-                let netmask = if let Some(ip) = v4addr.netmask {
-                    Some(IpAddr::V4(ip))
-                } else {
-                    None
-                };
+                let broadcast = v4addr.broadcast.map(IpAddr::V4);
+                let netmask = v4addr.netmask.map(IpAddr::V4);
 
                 InterfaceAddr {
                     ip: IpAddr::V4(v4addr.ip),
@@ -74,17 +62,8 @@ impl From<network_interface::Addr> for InterfaceAddr {
                 }
             }
             network_interface::Addr::V6(v6addr) => {
-                let broadcast = if let Some(ip) = v6addr.broadcast {
-                    Some(IpAddr::V6(ip))
-                } else {
-                    None
-                };
-
-                let netmask = if let Some(ip) = v6addr.netmask {
-                    Some(IpAddr::V6(ip))
-                } else {
-                    None
-                };
+                let broadcast = v6addr.broadcast.map(IpAddr::V6);
+                let netmask = v6addr.netmask.map(IpAddr::V6);
 
                 InterfaceAddr {
                     ip: IpAddr::V6(v6addr.ip),
