@@ -137,3 +137,56 @@ impl<T: Clone> Receiver<T> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sync::mpmc::unbounded::unbounded_channel;
+
+    /// Poison the mutex guarding a channel so that subsequent lock attempts fail. This drives the
+    /// lock-error branches in the receiver. Poisoning happens on the current thread by panicking
+    /// while holding the guard.
+    fn poison_channel<T>(channel: &Arc<Mutex<Channel<T>>>) {
+        let handle = channel.clone();
+        let previous_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _guard = handle.lock().unwrap();
+            panic!("intentionally poison the mutex for testing");
+        }));
+        std::panic::set_hook(previous_hook);
+        assert!(channel.is_poisoned());
+    }
+
+    #[tokio::test]
+    async fn test_recv_on_poisoned_empty_channel() {
+        // With no messages queued and a poisoned channel, recv cannot lock the channel and returns
+        // None instead of blocking.
+        let (sender, mut receiver) = unbounded_channel::<i32>();
+        poison_channel(&receiver.channel);
+
+        assert_eq!(receiver.recv().await, None);
+        drop(sender);
+    }
+
+    #[tokio::test]
+    async fn test_recv_on_poisoned_channel_with_message() {
+        // A message is available in the receiver's fork, but the poisoned channel lock prevents
+        // clearing the waker, so recv returns None.
+        let (sender, mut receiver) = unbounded_channel::<i32>();
+        sender.send(5).await.unwrap();
+        poison_channel(&receiver.channel);
+
+        assert_eq!(receiver.recv().await, None);
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "Failed to lock channel")]
+    async fn test_subscribe_on_poisoned_channel_panics() {
+        // Creating a new receiver against a poisoned channel panics because the queue fork requires
+        // locking the channel.
+        let (sender, receiver) = unbounded_channel::<i32>();
+        poison_channel(&receiver.channel);
+        let _receiver2 = sender.subscribe();
+    }
+}

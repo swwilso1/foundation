@@ -165,3 +165,73 @@ impl<T: Clone> Drop for Sender<T> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sync::mpmc::unbounded::unbounded_channel;
+
+    /// Poison the mutex guarding a channel so that subsequent lock attempts fail. This lets us
+    /// exercise the lock-error branches in the sender. Poisoning happens on the current thread by
+    /// panicking while holding the guard.
+    fn poison_channel<T>(channel: &Arc<Mutex<Channel<T>>>) {
+        let handle = channel.clone();
+        let previous_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _guard = handle.lock().unwrap();
+            panic!("intentionally poison the mutex for testing");
+        }));
+        std::panic::set_hook(previous_hook);
+        assert!(channel.is_poisoned());
+    }
+
+    #[tokio::test]
+    async fn test_clone_shares_channel() {
+        // A cloned sender shares the same channel; messages sent through it reach the receiver and
+        // both senders keep the channel open.
+        let (sender, mut receiver) = unbounded_channel::<i32>();
+        let sender2 = sender.clone();
+
+        {
+            let channel = sender.channel.lock().unwrap();
+            assert_eq!(channel.live_senders(), 2);
+        }
+
+        sender2.send(10).await.unwrap();
+        sender.send(11).await.unwrap();
+
+        assert_eq!(receiver.recv().await, Some(10));
+        assert_eq!(receiver.recv().await, Some(11));
+    }
+
+    #[tokio::test]
+    async fn test_clone_with_poisoned_channel() {
+        // Cloning still produces a sender even when the channel lock is poisoned (the sender count
+        // simply cannot be incremented).
+        let (sender, _receiver) = unbounded_channel::<i32>();
+        poison_channel(&sender.channel);
+
+        let cloned = sender.clone();
+        assert!(cloned.channel.is_poisoned());
+        // Dropping the senders here exercises the poisoned-lock branch in Drop.
+    }
+
+    #[tokio::test]
+    async fn test_send_on_poisoned_channel_errors() {
+        // Sending on a poisoned channel returns the original message back in the SendError.
+        let (sender, _receiver) = unbounded_channel::<i32>();
+        poison_channel(&sender.channel);
+
+        let result = sender.send(99).await;
+        assert!(matches!(result, Err(SendError(99))));
+    }
+
+    #[tokio::test]
+    async fn test_drop_on_poisoned_channel() {
+        // Dropping a sender whose channel lock is poisoned must not panic.
+        let (sender, _receiver) = unbounded_channel::<i32>();
+        poison_channel(&sender.channel);
+        drop(sender);
+    }
+}
