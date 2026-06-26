@@ -180,3 +180,125 @@ impl Display for AddressMode {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default() {
+        let config = NetworkConfiguration::default();
+        assert_eq!(config.address_mode, AddressMode::DHCP);
+        assert_eq!(config.interface, NetworkInterface::default());
+        assert!(!config.enabled);
+        assert_eq!(config.wifi_configuration, None);
+        assert_eq!(config.dhcp_range, None);
+    }
+
+    #[test]
+    fn test_new() {
+        let interface = NetworkInterface::new_with_name("eth0");
+        let config = NetworkConfiguration::new(
+            AddressMode::Static,
+            interface.clone(),
+            true,
+            None,
+            None,
+        );
+        assert_eq!(config.address_mode, AddressMode::Static);
+        assert_eq!(config.interface, interface);
+        assert!(config.enabled);
+    }
+
+    #[test]
+    fn test_new_with_name() {
+        let config = NetworkConfiguration::new_with_name("wlan0");
+        assert_eq!(config.get_name(), "wlan0");
+        assert_eq!(config.address_mode, AddressMode::DHCP);
+        assert!(!config.enabled);
+        assert_eq!(config.wifi_configuration, None);
+        assert_eq!(config.dhcp_range, None);
+    }
+
+    #[test]
+    fn test_new_with_interface() {
+        let interface = NetworkInterface::new_with_name("eth1");
+        let config = NetworkConfiguration::new_with_interface(interface.clone());
+        assert_eq!(config.interface, interface);
+        assert_eq!(config.address_mode, AddressMode::DHCP);
+        assert!(config.enabled);
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut config = NetworkConfiguration::new_with_name("eth0");
+        config.address_mode = AddressMode::Static;
+        config.enabled = true;
+        config.clear();
+        assert_eq!(config, NetworkConfiguration::default());
+    }
+
+    #[test]
+    fn test_get_and_set_name() {
+        let mut config = NetworkConfiguration::new_with_name("eth0");
+        assert_eq!(config.get_name(), "eth0");
+        config.set_name("eth2");
+        assert_eq!(config.get_name(), "eth2");
+        assert_eq!(config.interface.name, "eth2");
+    }
+
+    #[test]
+    fn test_exists() {
+        let mut config = NetworkConfiguration::new_with_name("eth0");
+        assert!(!config.exists());
+        config.interface.exists = true;
+        assert!(config.exists());
+    }
+
+    #[test]
+    fn test_address_mode_display() {
+        assert_eq!(AddressMode::DHCP.to_string(), "dhcp");
+        assert_eq!(AddressMode::Static.to_string(), "static");
+    }
+
+    #[test]
+    fn test_address_mode_from_str() {
+        assert_eq!("dhcp".parse::<AddressMode>().unwrap(), AddressMode::DHCP);
+        assert_eq!("static".parse::<AddressMode>().unwrap(), AddressMode::Static);
+    }
+
+    #[test]
+    fn test_address_mode_from_str_roundtrip() {
+        for mode in [AddressMode::DHCP, AddressMode::Static] {
+            assert_eq!(mode.to_string().parse::<AddressMode>().unwrap(), mode);
+        }
+    }
+
+    #[test]
+    fn test_address_mode_from_str_invalid() {
+        let result = "bogus".parse::<AddressMode>();
+        assert!(matches!(
+            result,
+            Err(FoundationError::InvalidConversion(s, "AddressMode")) if s == "bogus"
+        ));
+    }
+
+    // `is_wireless_enabled` relies on a platform-specific netlink query that is only
+    // implemented on Linux (the macOS implementation is a stub), so gate the test.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_is_wireless_enabled_via_configuration() {
+        use crate::network::wireless::configuration::WirelessConfiguration;
+
+        // An interface with a name that is not a real wireless device and no wifi
+        // configuration should not be considered wireless.
+        let config = NetworkConfiguration::new_with_name("eth0");
+        assert!(!config.is_wireless_enabled());
+
+        // Attaching a wifi configuration makes the interface wireless regardless of the
+        // underlying device.
+        let mut wifi_config = NetworkConfiguration::new_with_name("eth0");
+        wifi_config.wifi_configuration = Some(WirelessConfiguration::default());
+        assert!(wifi_config.is_wireless_enabled());
+    }
+}

@@ -133,3 +133,141 @@ impl TryFrom<&str> for InterfaceAddr {
         Ok(InterfaceAddr::new(ip, None, None))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use network_interface::{V4IfAddr, V6IfAddr};
+
+    #[test]
+    fn test_new() {
+        let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 5));
+        let broadcast = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 255));
+        let netmask = IpAddr::V4(Ipv4Addr::new(255, 255, 255, 0));
+        let addr = InterfaceAddr::new(ip, Some(broadcast), Some(netmask));
+        assert_eq!(addr.ip, ip);
+        assert_eq!(addr.broadcast, Some(broadcast));
+        assert_eq!(addr.netmask, Some(netmask));
+    }
+
+    #[test]
+    fn test_get_in_cidr_notation_with_netmask() {
+        let addr = InterfaceAddr::new(
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 5)),
+            None,
+            Some(IpAddr::V4(Ipv4Addr::new(255, 255, 255, 0))),
+        );
+        assert_eq!(addr.get_in_cidr_notation(), Some("192.168.1.5/24".to_string()));
+    }
+
+    #[test]
+    fn test_get_in_cidr_notation_without_netmask() {
+        let addr = InterfaceAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 5)), None, None);
+        assert_eq!(addr.get_in_cidr_notation(), None);
+    }
+
+    #[test]
+    fn test_try_from_cidr_ipv4() {
+        let addr = InterfaceAddr::try_from("10.0.0.1/8").unwrap();
+        assert_eq!(addr.ip, IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)));
+        assert_eq!(addr.broadcast, None);
+        assert_eq!(
+            addr.netmask,
+            Some(IpAddr::V4(Ipv4Addr::new(255, 0, 0, 0)))
+        );
+    }
+
+    #[test]
+    fn test_try_from_cidr_ipv6() {
+        let addr = InterfaceAddr::try_from("fc00::1/64").unwrap();
+        assert_eq!(
+            addr.ip,
+            IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1))
+        );
+        assert_eq!(
+            addr.netmask,
+            Some(IpAddr::V6(Ipv6Addr::new(
+                0xffff, 0xffff, 0xffff, 0xffff, 0, 0, 0, 0
+            )))
+        );
+    }
+
+    #[test]
+    fn test_try_from_plain_ip() {
+        let addr = InterfaceAddr::try_from("172.16.0.1").unwrap();
+        assert_eq!(addr.ip, IpAddr::V4(Ipv4Addr::new(172, 16, 0, 1)));
+        assert_eq!(addr.broadcast, None);
+        assert_eq!(addr.netmask, None);
+    }
+
+    #[test]
+    fn test_try_from_too_many_slashes() {
+        let result = InterfaceAddr::try_from("10.0.0.1/8/16");
+        assert!(matches!(result, Err(FoundationError::OperationFailed(_))));
+    }
+
+    #[test]
+    fn test_try_from_invalid_mask_bits() {
+        let result = InterfaceAddr::try_from("10.0.0.1/abc");
+        assert!(matches!(result, Err(FoundationError::ParseIntError(_))));
+    }
+
+    #[test]
+    fn test_try_from_invalid_ip() {
+        let result = InterfaceAddr::try_from("not_an_ip");
+        assert!(matches!(result, Err(FoundationError::AddressParseError(_))));
+    }
+
+    #[test]
+    fn test_from_network_interface_addr_v4() {
+        let v4addr = network_interface::Addr::V4(V4IfAddr {
+            ip: Ipv4Addr::new(192, 168, 1, 5),
+            broadcast: Some(Ipv4Addr::new(192, 168, 1, 255)),
+            netmask: Some(Ipv4Addr::new(255, 255, 255, 0)),
+        });
+        let addr = InterfaceAddr::from(v4addr);
+        assert_eq!(addr.ip, IpAddr::V4(Ipv4Addr::new(192, 168, 1, 5)));
+        assert_eq!(
+            addr.broadcast,
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 255)))
+        );
+        assert_eq!(
+            addr.netmask,
+            Some(IpAddr::V4(Ipv4Addr::new(255, 255, 255, 0)))
+        );
+    }
+
+    #[test]
+    fn test_from_network_interface_addr_v4_no_optionals() {
+        let v4addr = network_interface::Addr::V4(V4IfAddr {
+            ip: Ipv4Addr::new(192, 168, 1, 5),
+            broadcast: None,
+            netmask: None,
+        });
+        let addr = InterfaceAddr::from(v4addr);
+        assert_eq!(addr.ip, IpAddr::V4(Ipv4Addr::new(192, 168, 1, 5)));
+        assert_eq!(addr.broadcast, None);
+        assert_eq!(addr.netmask, None);
+    }
+
+    #[test]
+    fn test_from_network_interface_addr_v6() {
+        let v6addr = network_interface::Addr::V6(V6IfAddr {
+            ip: Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1),
+            broadcast: None,
+            netmask: Some(Ipv6Addr::new(0xffff, 0xffff, 0xffff, 0xffff, 0, 0, 0, 0)),
+        });
+        let addr = InterfaceAddr::from(v6addr);
+        assert_eq!(
+            addr.ip,
+            IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1))
+        );
+        assert_eq!(addr.broadcast, None);
+        assert_eq!(
+            addr.netmask,
+            Some(IpAddr::V6(Ipv6Addr::new(
+                0xffff, 0xffff, 0xffff, 0xffff, 0, 0, 0, 0
+            )))
+        );
+    }
+}

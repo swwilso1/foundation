@@ -335,3 +335,104 @@ impl NetworkManager {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::network::networkconfiguration::NetworkConfiguration;
+
+    #[test]
+    fn test_new_is_empty() {
+        let manager = NetworkManager::new();
+        assert!(!manager.has_configuration_for_name("eth0"));
+        assert_eq!(manager.get_number_of_ethernet_configurations(), 0);
+    }
+
+    #[test]
+    fn test_add_and_get_configuration() {
+        let mut manager = NetworkManager::new();
+        let config = NetworkConfiguration::new_with_name("eth0");
+        manager.add_configuration(config.clone());
+
+        assert!(manager.has_configuration_for_name("eth0"));
+        assert!(!manager.has_configuration_for_name("eth1"));
+        assert_eq!(manager.get_configuration("eth0"), Some(&config));
+        assert_eq!(manager.get_configuration("eth1"), None);
+    }
+
+    #[test]
+    fn test_get_configuration_mut() {
+        let mut manager = NetworkManager::new();
+        manager.add_configuration(NetworkConfiguration::new_with_name("eth0"));
+
+        let config = manager.get_configuration_mut("eth0").unwrap();
+        config.enabled = true;
+
+        assert!(manager.get_configuration("eth0").unwrap().enabled);
+        assert!(manager.get_configuration_mut("missing").is_none());
+    }
+
+    #[test]
+    fn test_set_configuration() {
+        let mut manager = NetworkManager::new();
+        let config = NetworkConfiguration::new_with_name("eth0");
+
+        // `set_configuration` keys on the supplied name, not the interface name.
+        manager.set_configuration("custom", &config);
+        assert!(manager.has_configuration_for_name("custom"));
+        assert!(!manager.has_configuration_for_name("eth0"));
+    }
+
+    #[test]
+    fn test_remove_configuration() {
+        let mut manager = NetworkManager::new();
+        manager.add_configuration(NetworkConfiguration::new_with_name("eth0"));
+        assert!(manager.has_configuration_for_name("eth0"));
+
+        manager.remove_configuration("eth0");
+        assert!(!manager.has_configuration_for_name("eth0"));
+
+        // Removing a non-existent configuration is a no-op.
+        manager.remove_configuration("eth0");
+        assert!(!manager.has_configuration_for_name("eth0"));
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut manager = NetworkManager::new();
+        manager.add_configuration(NetworkConfiguration::new_with_name("eth0"));
+        manager.add_configuration(NetworkConfiguration::new_with_name("eth1"));
+
+        manager.clear();
+        assert!(!manager.has_configuration_for_name("eth0"));
+        assert!(!manager.has_configuration_for_name("eth1"));
+    }
+
+    // The wireless/ethernet classification helpers depend on a platform-specific netlink
+    // query that is only implemented on Linux (macOS provides a stub), so gate them.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_ethernet_and_wireless_classification() {
+        use crate::network::wireless::configuration::WirelessConfiguration;
+
+        let mut manager = NetworkManager::new();
+
+        // A plain, enabled ethernet configuration.
+        let mut eth = NetworkConfiguration::new_with_name("eth0");
+        eth.enabled = true;
+        manager.add_configuration(eth);
+
+        // A wireless configuration (made wireless via an attached wifi configuration).
+        let mut wifi = NetworkConfiguration::new_with_name("wlan0");
+        wifi.enabled = true;
+        wifi.wifi_configuration = Some(WirelessConfiguration::default());
+        manager.add_configuration(wifi);
+
+        assert!(manager.is_ethernet_enabled());
+        assert!(manager.is_wireless_enabled());
+        assert_eq!(manager.get_number_of_ethernet_configurations(), 1);
+        assert_eq!(manager.get_number_of_wireless_configurations(), 1);
+        assert_eq!(manager.get_ethernet_configuration_names(), vec!["eth0"]);
+        assert_eq!(manager.get_wireless_configuration_names(), vec!["wlan0"]);
+    }
+}

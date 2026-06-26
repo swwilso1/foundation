@@ -99,11 +99,9 @@ impl IpAddrQuery for Ipv4Addr {
     }
 
     fn from_integer(ip: Self::Integer) -> Ipv4Addr {
-        let bytes: [u8; 4] = if cfg!(target_endian = "little") {
-            ip.to_le_bytes()
-        } else {
-            ip.to_be_bytes()
-        };
+        // `to_integer` reads the octets in big-endian (network) order, so decode the
+        // same way to ensure the two functions are inverses of each other.
+        let bytes: [u8; 4] = ip.to_be_bytes();
         Ipv4Addr::new(bytes[0], bytes[1], bytes[2], bytes[3])
     }
 
@@ -175,20 +173,12 @@ impl IpAddrQuery for Ipv6Addr {
     }
 
     fn from_integer(ip: Self::Integer) -> Self {
-        let bytes: [u8; 16] = if cfg!(target_endian = "little") {
-            ip.to_le_bytes()
-        } else {
-            ip.to_be_bytes()
-        };
+        // `to_integer` reads the octets in big-endian (network) order, so decode the
+        // same way to ensure the two functions are inverses of each other.
+        let bytes: [u8; 16] = ip.to_be_bytes();
 
         let u16_values: Vec<u16> = (0..8)
-            .map(|i| {
-                if cfg!(target_endian = "little") {
-                    u16::from_le_bytes([bytes[i * 2], bytes[i * 2 + 1]])
-                } else {
-                    u16::from_be_bytes([bytes[i * 2], bytes[i * 2 + 1]])
-                }
-            })
+            .map(|i| u16::from_be_bytes([bytes[i * 2], bytes[i * 2 + 1]]))
             .collect::<Vec<u16>>();
         Self::new(
             u16_values[0],
@@ -364,5 +354,117 @@ mod tests {
             Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0).is_global_address(),
             false
         );
+    }
+
+    #[test]
+    fn test_ipv4_to_integer() {
+        // `to_integer` interprets the octets as a big-endian (network-order) number.
+        assert_eq!(Ipv4Addr::new(8, 8, 8, 8).to_integer(), 0x0808_0808);
+        assert_eq!(Ipv4Addr::new(192, 168, 1, 1).to_integer(), 0xC0A8_0101);
+        assert_eq!(Ipv4Addr::UNSPECIFIED.to_integer(), 0);
+        assert_eq!(Ipv4Addr::BROADCAST.to_integer(), u32::MAX);
+    }
+
+    #[test]
+    fn test_ipv6_to_integer() {
+        assert_eq!(Ipv6Addr::LOCALHOST.to_integer(), 1u128);
+        assert_eq!(Ipv6Addr::UNSPECIFIED.to_integer(), 0u128);
+    }
+
+    #[test]
+    fn test_ipv4_integer_roundtrip() {
+        for addr in [
+            Ipv4Addr::new(8, 8, 8, 8),
+            Ipv4Addr::new(192, 168, 1, 1),
+            Ipv4Addr::new(203, 0, 113, 42),
+            Ipv4Addr::UNSPECIFIED,
+            Ipv4Addr::BROADCAST,
+        ] {
+            assert_eq!(Ipv4Addr::from_integer(addr.to_integer()), addr);
+        }
+
+        // `from_integer` decodes a known big-endian value correctly.
+        assert_eq!(
+            Ipv4Addr::from_integer(0xC0A8_0101),
+            Ipv4Addr::new(192, 168, 1, 1)
+        );
+    }
+
+    #[test]
+    fn test_ipv6_integer_roundtrip() {
+        for addr in [
+            Ipv6Addr::new(0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8888),
+            Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1),
+            Ipv6Addr::LOCALHOST,
+            Ipv6Addr::UNSPECIFIED,
+        ] {
+            assert_eq!(Ipv6Addr::from_integer(addr.to_integer()), addr);
+        }
+
+        // `from_integer` decodes a known big-endian value correctly.
+        assert_eq!(Ipv6Addr::from_integer(1u128), Ipv6Addr::LOCALHOST);
+    }
+
+    #[test]
+    fn test_ipv4_from_str() {
+        assert_eq!(
+            <Ipv4Addr as IpAddrQuery>::from("1.2.3.4").unwrap(),
+            Ipv4Addr::new(1, 2, 3, 4)
+        );
+        assert!(matches!(
+            <Ipv4Addr as IpAddrQuery>::from("not_an_ip"),
+            Err(FoundationError::AddressParseError(_))
+        ));
+    }
+
+    #[test]
+    fn test_ipv6_from_str() {
+        assert_eq!(
+            <Ipv6Addr as IpAddrQuery>::from("::1").unwrap(),
+            Ipv6Addr::LOCALHOST
+        );
+        assert!(matches!(
+            <Ipv6Addr as IpAddrQuery>::from("not_an_ip"),
+            Err(FoundationError::AddressParseError(_))
+        ));
+    }
+
+    #[test]
+    fn test_ipaddr_from_str_dispatches_on_family() {
+        assert_eq!(
+            <IpAddr as IpAddrQuery>::from("10.0.0.1").unwrap(),
+            IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))
+        );
+        assert_eq!(
+            <IpAddr as IpAddrQuery>::from("fc00::1").unwrap(),
+            IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1))
+        );
+        assert!(matches!(
+            <IpAddr as IpAddrQuery>::from("garbage"),
+            Err(FoundationError::OperationFailed(_))
+        ));
+    }
+
+    #[test]
+    fn test_ipaddr_from_integer_selects_family() {
+        // Values that fit in a u32 map to IPv4.
+        assert_eq!(
+            IpAddr::from_integer(0x0808_0808u128),
+            IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))
+        );
+        // Values larger than u32::MAX map to IPv6.
+        let big = (u32::MAX as u128) + 1;
+        assert!(matches!(IpAddr::from_integer(big), IpAddr::V6(_)));
+    }
+
+    #[test]
+    fn test_ipaddr_to_integer_and_global() {
+        let v4 = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
+        assert_eq!(v4.to_integer(), 0x0808_0808u128);
+        assert!(v4.is_global_address());
+
+        let v6 = IpAddr::V6(Ipv6Addr::LOCALHOST);
+        assert_eq!(v6.to_integer(), 1u128);
+        assert!(!v6.is_global_address());
     }
 }
