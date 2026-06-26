@@ -87,7 +87,50 @@ mod tests {
     use super::*;
     use std::fs;
     use std::io::Write;
-    use tempfile::NamedTempFile;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use tempfile::{NamedTempFile, TempDir};
+
+    #[tokio::test]
+    async fn test_async_copy_source_not_found() {
+        let dir = TempDir::new().unwrap();
+        let missing = dir.path().join("nope");
+        let dest_path = dir.path().join("dest");
+
+        let err = async_copy(&missing, &dest_path, Arc::new(|| false), None)
+            .await
+            .unwrap_err();
+        match err {
+            FoundationError::FileNotFound(p) => assert_eq!(p, missing),
+            other => panic!("expected FileNotFound, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_async_copy_updates_progress_meter() {
+        let data = vec![3u8; BLOCKSIZE + 4096];
+        let mut src_file = NamedTempFile::new().unwrap();
+        src_file.write_all(&data).unwrap();
+        src_file.flush().unwrap();
+
+        let dest_file = NamedTempFile::new().unwrap();
+        let dest_path = dest_file.path().to_path_buf();
+
+        let last_percent = Arc::new(AtomicU64::new(0));
+        let last_percent_clone = last_percent.clone();
+        let notifier = Box::new(move |percent: u8| {
+            last_percent_clone.store(percent as u64, Ordering::SeqCst);
+        });
+        let meter = Arc::new(Mutex::new(
+            ProgressMeter::new_with_notifier_and_size(notifier, data.len() as u64),
+        ));
+
+        async_copy(src_file.path(), &dest_path, Arc::new(|| false), Some(meter))
+            .await
+            .unwrap();
+
+        assert_eq!(fs::read(&dest_path).unwrap(), data);
+        assert_eq!(last_percent.load(Ordering::SeqCst), 100);
+    }
 
     #[tokio::test]
     async fn test_async_copy() {
