@@ -138,6 +138,34 @@ impl<T> Channel<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::task::Wake;
+
+    /// A waker that counts how many times it gets woken. This lets the waker-management tests
+    /// observe exactly which wakers `Channel::wake` notifies.
+    struct CountingWaker {
+        count: Arc<AtomicUsize>,
+    }
+
+    impl Wake for CountingWaker {
+        fn wake(self: Arc<Self>) {
+            self.count.fetch_add(1, Ordering::SeqCst);
+        }
+
+        fn wake_by_ref(self: &Arc<Self>) {
+            self.count.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    /// Build a [`Waker`] together with the counter it increments when woken.
+    fn counting_waker() -> (Waker, Arc<AtomicUsize>) {
+        let count = Arc::new(AtomicUsize::new(0));
+        let waker = Waker::from(Arc::new(CountingWaker {
+            count: count.clone(),
+        }));
+        (waker, count)
+    }
 
     #[test]
     fn test_channel() {
@@ -145,5 +173,81 @@ mod tests {
         channel.send(1).unwrap();
         channel.send(2).unwrap();
         channel.send(3).unwrap();
+    }
+
+    #[test]
+    fn test_sender_count_tracking() {
+        // A fresh channel starts with no senders, and increment/decrement track the live count.
+        let mut channel: Channel<i32> = Channel::new();
+        assert_eq!(channel.live_senders(), 0);
+
+        channel.increment_senders();
+        channel.increment_senders();
+        assert_eq!(channel.live_senders(), 2);
+
+        channel.decrement_senders();
+        assert_eq!(channel.live_senders(), 1);
+
+        channel.decrement_senders();
+        assert_eq!(channel.live_senders(), 0);
+    }
+
+    #[test]
+    fn test_wake_only_notifies_requested_table() {
+        // Wakers live in separate sender and receiver tables; waking one table must not touch the
+        // other.
+        let mut channel: Channel<i32> = Channel::new();
+        let (sender_waker, sender_count) = counting_waker();
+        let (receiver_waker, receiver_count) = counting_waker();
+
+        channel.set_waker("s1".to_string(), sender_waker, WhichWaker::Sender);
+        channel.set_waker("r1".to_string(), receiver_waker, WhichWaker::Receiver);
+
+        channel.wake(WhichWaker::Receiver);
+        assert_eq!(receiver_count.load(Ordering::SeqCst), 1);
+        assert_eq!(sender_count.load(Ordering::SeqCst), 0);
+
+        channel.wake(WhichWaker::Sender);
+        assert_eq!(receiver_count.load(Ordering::SeqCst), 1);
+        assert_eq!(sender_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn test_remove_waker_stops_notifications() {
+        // After removing a waker it no longer gets notified, and re-inserting under the same id
+        // replaces the previous waker rather than keeping both.
+        let mut channel: Channel<i32> = Channel::new();
+        let (waker, count) = counting_waker();
+
+        channel.set_waker("r1".to_string(), waker, WhichWaker::Receiver);
+        channel.remove_waker("r1", WhichWaker::Receiver);
+        channel.wake(WhichWaker::Receiver);
+        assert_eq!(count.load(Ordering::SeqCst), 0);
+
+        // Inserting two wakers under the same id keeps only the last one.
+        let (first, first_count) = counting_waker();
+        let (second, second_count) = counting_waker();
+        channel.set_waker("dup".to_string(), first, WhichWaker::Receiver);
+        channel.set_waker("dup".to_string(), second, WhichWaker::Receiver);
+        channel.wake(WhichWaker::Receiver);
+        assert_eq!(first_count.load(Ordering::SeqCst), 0);
+        assert_eq!(second_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn test_remove_missing_waker_is_noop() {
+        // Removing an id that was never registered does nothing and does not panic.
+        let mut channel: Channel<i32> = Channel::new();
+        channel.remove_waker("does-not-exist", WhichWaker::Sender);
+        channel.remove_waker("does-not-exist", WhichWaker::Receiver);
+    }
+
+    #[test]
+    fn test_which_waker_derives() {
+        // WhichWaker derives Clone and Debug; exercise both variants.
+        let sender = WhichWaker::Sender;
+        let receiver = WhichWaker::Receiver;
+        assert_eq!(format!("{:?}", sender.clone()), "Sender");
+        assert_eq!(format!("{:?}", receiver.clone()), "Receiver");
     }
 }

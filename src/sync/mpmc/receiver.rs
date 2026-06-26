@@ -181,6 +181,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_buffered_messages_survive_sender_drop() {
+        // Messages already in the channel remain readable after every sender drops; the receiver
+        // drains them in FIFO order and only then observes the closed channel as None.
+        let (sender, mut receiver) = unbounded_channel::<i32>();
+
+        sender.send(1).await.unwrap();
+        sender.send(2).await.unwrap();
+        sender.send(3).await.unwrap();
+        drop(sender);
+
+        assert_eq!(receiver.recv().await, Some(1));
+        assert_eq!(receiver.recv().await, Some(2));
+        assert_eq!(receiver.recv().await, Some(3));
+        assert_eq!(receiver.recv().await, None);
+        // Once closed, the channel stays closed on subsequent reads.
+        assert_eq!(receiver.recv().await, None);
+    }
+
+    #[tokio::test]
     #[should_panic(expected = "Failed to lock channel")]
     async fn test_subscribe_on_poisoned_channel_panics() {
         // Creating a new receiver against a poisoned channel panics because the queue fork requires

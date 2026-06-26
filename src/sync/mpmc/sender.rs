@@ -169,6 +169,7 @@ impl<T: Clone> Drop for Sender<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sync::mpmc::bounded::channel;
     use crate::sync::mpmc::unbounded::unbounded_channel;
 
     /// Poison the mutex guarding a channel so that subsequent lock attempts fail. This lets us
@@ -233,5 +234,77 @@ mod tests {
         let (sender, _receiver) = unbounded_channel::<i32>();
         poison_channel(&sender.channel);
         drop(sender);
+    }
+
+    #[tokio::test]
+    async fn test_subscribe_receives_only_future_messages() {
+        // A receiver created via subscribe forks the queue at the moment of subscription, so it
+        // only sees messages sent afterward, while the original receiver sees everything.
+        let (sender, mut receiver) = unbounded_channel::<i32>();
+
+        sender.send(1).await.unwrap();
+        let mut late = sender.subscribe();
+        sender.send(2).await.unwrap();
+
+        // The original receiver observes both messages.
+        assert_eq!(receiver.recv().await, Some(1));
+        assert_eq!(receiver.recv().await, Some(2));
+
+        // The late subscriber only observes the message sent after it subscribed.
+        assert_eq!(late.recv().await, Some(2));
+
+        // No more senders once dropped: both receivers should now drain to None.
+        drop(sender);
+        assert_eq!(receiver.recv().await, None);
+        assert_eq!(late.recv().await, None);
+    }
+
+    #[tokio::test]
+    async fn test_dropping_all_senders_closes_channel() {
+        // Once every sender drops, a receiver that has drained the channel receives None.
+        let (sender, mut receiver) = unbounded_channel::<i32>();
+        let sender2 = sender.clone();
+
+        sender.send(1).await.unwrap();
+        sender2.send(2).await.unwrap();
+
+        // Dropping only one sender leaves the channel open.
+        drop(sender);
+        assert_eq!(receiver.recv().await, Some(1));
+        assert_eq!(receiver.recv().await, Some(2));
+
+        // Dropping the last sender closes the channel.
+        drop(sender2);
+        assert_eq!(receiver.recv().await, None);
+    }
+
+    #[tokio::test]
+    async fn test_bounded_channel_applies_backpressure() {
+        // A bounded channel only permits `bound` unread messages; the third send cannot complete
+        // until a receiver reads one out, so it stays pending until then.
+        let (sender, mut receiver) = channel::<i32>(2);
+
+        sender.send(1).await.unwrap();
+        sender.send(2).await.unwrap();
+
+        // The queue is full; spawn the third send and confirm it does not complete on its own.
+        let send_handle = tokio::spawn(async move {
+            sender.send(3).await.unwrap();
+            sender
+        });
+
+        // Give the spawned send a chance to run; it must remain pending while the channel is full.
+        tokio::task::yield_now().await;
+        assert!(!send_handle.is_finished());
+
+        // Reading a message frees a slot and lets the pending send complete.
+        assert_eq!(receiver.recv().await, Some(1));
+        let sender = send_handle.await.unwrap();
+
+        assert_eq!(receiver.recv().await, Some(2));
+        assert_eq!(receiver.recv().await, Some(3));
+
+        drop(sender);
+        assert_eq!(receiver.recv().await, None);
     }
 }
