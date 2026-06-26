@@ -21,12 +21,14 @@ pub struct Interrupter {
     interruption: Option<Interruption>,
 }
 
-impl Interrupter {
+impl Default for Interrupter {
     /// Create a new `Interrupter` with no interruption.
-    pub fn default() -> Interrupter {
+    fn default() -> Interrupter {
         Interrupter { interruption: None }
     }
+}
 
+impl Interrupter {
     /// Set the interruption state to the given interruption.
     ///
     /// # Arguments
@@ -79,7 +81,7 @@ mod tests {
     #[test]
     fn test_default() {
         let interrupter = Interrupter::default();
-        assert_eq!(interrupter.interrupted(), false);
+        assert!(!interrupter.interrupted());
         assert_eq!(interrupter.get_interruption(), None);
     }
 
@@ -87,17 +89,17 @@ mod tests {
     fn test_interrupt_with() {
         let mut interrupter = Interrupter::default();
         interrupter.interrupt_with(Interruption::Pause);
-        assert_eq!(interrupter.interrupted(), true);
+        assert!(interrupter.interrupted());
         assert_eq!(interrupter.get_interruption(), Some(Interruption::Pause));
-        assert_eq!(interrupter.interrupt_is(Interruption::Pause), true);
+        assert!(interrupter.interrupt_is(Interruption::Pause));
     }
 
     #[test]
     fn test_interrupt_is() {
         let mut interrupter = Interrupter::default();
         interrupter.interrupt_with(Interruption::Pause);
-        assert_eq!(interrupter.interrupt_is(Interruption::Pause), true);
-        assert_eq!(interrupter.interrupt_is(Interruption::Stop), false);
+        assert!(interrupter.interrupt_is(Interruption::Pause));
+        assert!(!interrupter.interrupt_is(Interruption::Stop));
     }
 
     #[test]
@@ -105,7 +107,7 @@ mod tests {
         let mut interrupter = Interrupter::default();
         interrupter.interrupt_with(Interruption::Pause);
         interrupter.clear();
-        assert_eq!(interrupter.interrupted(), false);
+        assert!(!interrupter.interrupted());
         assert_eq!(interrupter.get_interruption(), None);
     }
 
@@ -113,7 +115,7 @@ mod tests {
     fn test_clear_when_already_empty() {
         let mut interrupter = Interrupter::default();
         interrupter.clear();
-        assert_eq!(interrupter.interrupted(), false);
+        assert!(!interrupter.interrupted());
         assert_eq!(interrupter.get_interruption(), None);
     }
 
@@ -121,10 +123,10 @@ mod tests {
     fn test_interrupt_is_when_none() {
         // Exercises the `None => false` branch of `interrupt_is`.
         let interrupter = Interrupter::default();
-        assert_eq!(interrupter.interrupt_is(Interruption::Stop), false);
-        assert_eq!(interrupter.interrupt_is(Interruption::Pause), false);
-        assert_eq!(interrupter.interrupt_is(Interruption::Resume), false);
-        assert_eq!(interrupter.interrupt_is(Interruption::Abort), false);
+        assert!(!interrupter.interrupt_is(Interruption::Stop));
+        assert!(!interrupter.interrupt_is(Interruption::Pause));
+        assert!(!interrupter.interrupt_is(Interruption::Resume));
+        assert!(!interrupter.interrupt_is(Interruption::Abort));
     }
 
     #[test]
@@ -137,9 +139,9 @@ mod tests {
         ] {
             let mut interrupter = Interrupter::default();
             interrupter.interrupt_with(variant);
-            assert_eq!(interrupter.interrupted(), true);
+            assert!(interrupter.interrupted());
             assert_eq!(interrupter.get_interruption(), Some(variant));
-            assert_eq!(interrupter.interrupt_is(variant), true);
+            assert!(interrupter.interrupt_is(variant));
         }
     }
 
@@ -149,8 +151,8 @@ mod tests {
         interrupter.interrupt_with(Interruption::Pause);
         interrupter.interrupt_with(Interruption::Stop);
         assert_eq!(interrupter.get_interruption(), Some(Interruption::Stop));
-        assert_eq!(interrupter.interrupt_is(Interruption::Pause), false);
-        assert_eq!(interrupter.interrupt_is(Interruption::Stop), true);
+        assert!(!interrupter.interrupt_is(Interruption::Pause));
+        assert!(interrupter.interrupt_is(Interruption::Stop));
     }
 
     #[test]

@@ -241,9 +241,8 @@ mod tests {
         let tmp_file = temp_dir.join("filesystem_monitor_test.txt");
         std::fs::write(&tmp_file, "test").unwrap();
         sleep(Duration::from_secs(1));
-        assert_eq!(
-            event_handler_fired.load(std::sync::atomic::Ordering::Relaxed),
-            true
+        assert!(
+            event_handler_fired.load(std::sync::atomic::Ordering::Relaxed)
         );
         std::fs::remove_file(tmp_file).unwrap();
         monitor.stop();

@@ -93,6 +93,12 @@ pub struct Core<T> {
     count_at_end_of_queue: u32,
 }
 
+impl<T> Default for Core<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> Core<T> {
     /// The `new` function creates a new `Core` object.
     ///
@@ -124,7 +130,7 @@ impl<T> Core<T> {
             self.head = raw;
             self.tail = raw;
         } else {
-            assert_eq!(self.tail.is_null(), false, "tail is null");
+            assert!(!self.tail.is_null(), "tail is null");
             unsafe {
                 // Insert the new block after the current tail.
                 (*self.tail).next = raw;
@@ -134,7 +140,7 @@ impl<T> Core<T> {
             self.tail = raw;
         }
 
-        assert_eq!(self.tail.is_null(), false, "tail is null");
+        assert!(!self.tail.is_null(), "tail is null");
 
         unsafe {
             // The block gets the current number of references as there are references
@@ -150,7 +156,7 @@ impl<T> Core<T> {
         let mut tmp = self.head;
         let mut previous: *mut Block<T> = std::ptr::null_mut();
 
-        while tmp != std::ptr::null_mut() {
+        while !tmp.is_null() {
             unsafe {
                 if (*tmp).reference_count == 0 {
                     // If the block we are examining is the last block, then make the last block
@@ -164,7 +170,7 @@ impl<T> Core<T> {
                     // us to remove a node from the middle of the list. It is a bit uncertain
                     // if we can actually have a node with a zero reference count in the middle
                     // of the list.
-                    if previous != std::ptr::null_mut() {
+                    if !previous.is_null() {
                         (*previous).next = (*tmp).next;
                         // This drop removes the block from the list and drops the memory. We must
                         // use the Box wrapper to remove the memory from the heap.
@@ -190,7 +196,7 @@ impl<T> Core<T> {
                 self.tail = self.head;
             } else {
                 tmp = self.head;
-                while tmp != std::ptr::null_mut() {
+                while !tmp.is_null() {
                     unsafe {
                         self.tail = tmp;
                         tmp = (*tmp).next;
@@ -208,7 +214,7 @@ impl<T> Core<T> {
     pub fn size(&self) -> usize {
         let mut count = 0;
         let mut tmp = self.head;
-        while tmp != std::ptr::null_mut() {
+        while !tmp.is_null() {
             count += 1;
             unsafe {
                 tmp = (*tmp).next;
@@ -261,6 +267,12 @@ pub struct MultiQueue<T> {
     at_end_of_queue: bool,
 }
 
+impl<T> Default for MultiQueue<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> MultiQueue<T> {
     /// The `new` function creates a new `MultiQueue` object.
     pub fn new() -> MultiQueue<T> {
@@ -284,7 +296,7 @@ impl<T> MultiQueue<T> {
         match self.core.lock() {
             Ok(mut core) => {
                 core.push_back(object);
-                if self.head == std::ptr::null_mut() {
+                if self.head.is_null() {
                     self.head = core.head;
                 }
                 Ok(())
@@ -297,7 +309,7 @@ impl<T> MultiQueue<T> {
     pub fn empty(&self) -> bool {
         match self.core.lock() {
             Ok(core) => {
-                if self.head == std::ptr::null_mut() {
+                if self.head.is_null() {
                     return core.empty();
                 }
 
@@ -329,7 +341,7 @@ impl<T> MultiQueue<T> {
                     return None;
                 }
 
-                if self.head == std::ptr::null_mut() {
+                if self.head.is_null() {
                     self.head = core.head;
                 }
 
@@ -337,7 +349,7 @@ impl<T> MultiQueue<T> {
                     // We just verified that self.head points to something valid.
                     let next = unsafe { (*self.head).next };
 
-                    if next == std::ptr::null_mut() {
+                    if next.is_null() {
                         return None;
                     }
 
@@ -352,9 +364,9 @@ impl<T> MultiQueue<T> {
                     core.count_at_end_of_queue -= 1;
                 }
 
-                assert_eq!(self.head.is_null(), false, "head is null");
+                assert!(!self.head.is_null(), "head is null");
                 unsafe {
-                    return Some(&(*self.head).object);
+                    Some(&(*self.head).object)
                 }
             }
             Err(_) => {
@@ -376,7 +388,7 @@ impl<T> MultiQueue<T> {
                     return None;
                 }
 
-                if self.head == std::ptr::null_mut() {
+                if self.head.is_null() {
                     self.head = core.head;
                 }
 
@@ -384,7 +396,7 @@ impl<T> MultiQueue<T> {
                     // We just verified that self.head points to something valid.
                     let next = unsafe { (*self.head).next };
 
-                    if next == std::ptr::null_mut() {
+                    if next.is_null() {
                         return None;
                     }
 
@@ -399,9 +411,9 @@ impl<T> MultiQueue<T> {
                     core.count_at_end_of_queue -= 1;
                 }
 
-                assert_eq!(self.head.is_null(), false, "head is null");
+                assert!(!self.head.is_null(), "head is null");
                 unsafe {
-                    return Some(&mut (*self.head).object);
+                    Some(&mut (*self.head).object)
                 }
             }
             Err(_) => {
@@ -420,7 +432,7 @@ impl<T> MultiQueue<T> {
                     return;
                 }
 
-                if self.head == std::ptr::null_mut() {
+                if self.head.is_null() {
                     self.head = core.head;
                 }
 
@@ -434,7 +446,7 @@ impl<T> MultiQueue<T> {
                     unsafe {
                         // If the next block is still null then we don't do anything else, we have
                         // no other block to move to.
-                        if (*self.head).next == std::ptr::null_mut() {
+                        if (*self.head).next.is_null() {
                             return;
                         }
 
@@ -448,7 +460,7 @@ impl<T> MultiQueue<T> {
                     unsafe {
                         // We are already at the end of the queue, so we only care about the
                         // case where the next block is not null.
-                        if (*self.head).next != std::ptr::null_mut() {
+                        if !(*self.head).next.is_null() {
                             (*self.head).reference_count -= 1;
                             self.head = (*self.head).next;
                             self.at_end_of_queue = false;
@@ -460,7 +472,7 @@ impl<T> MultiQueue<T> {
                     // next block in the queue.  I can decrement its reference count and go
                     // to the next block.
                     unsafe {
-                        if (*self.head).next == std::ptr::null_mut() {
+                        if (*self.head).next.is_null() {
                             self.at_end_of_queue = true;
                             core.count_at_end_of_queue += 1;
                         } else {
@@ -499,7 +511,7 @@ impl<T> MultiQueue<T> {
                 // the new queue structure.
                 core.reference_count += 1;
                 let mut tmp = self.head;
-                while tmp != std::ptr::null_mut() {
+                while !tmp.is_null() {
                     unsafe {
                         (*tmp).reference_count += 1;
                         tmp = (*tmp).next;
@@ -536,7 +548,7 @@ impl<T> MultiQueue<T> {
                 }
 
                 if self.at_end_of_queue {
-                    if self.head == std::ptr::null_mut() {
+                    if self.head.is_null() {
                         return core.size();
                     }
 
@@ -545,7 +557,7 @@ impl<T> MultiQueue<T> {
                     }
                 }
 
-                let tmp = if self.head == std::ptr::null_mut() {
+                let tmp = if self.head.is_null() {
                     core.head
                 } else {
                     self.head
@@ -595,7 +607,7 @@ impl<T> MultiQueue<T> {
     fn count_size_from(&self, block: *mut Block<T>) -> usize {
         let mut count = 0;
         let mut tmp = block;
-        while tmp != std::ptr::null_mut() {
+        while !tmp.is_null() {
             count += 1;
             unsafe {
                 tmp = (*tmp).next;
@@ -618,7 +630,7 @@ impl<T> Drop for MultiQueue<T> {
         // pop_all will take us to the last element of the list, but it will not decrement
         // the reference count. Since we are dropping we need to decrement that reference
         // count.
-        if self.head != std::ptr::null_mut() {
+        if !self.head.is_null() {
             unsafe {
                 (*self.head).reference_count -= 1;
             }
@@ -670,7 +682,7 @@ impl<'a, T> Iterator for MultiQueueIterator<'a, T> {
         // Just a reminder here that the head pointer is not actually the head inside the queue,
         // but rather our head pointer that we copied from the queue. (I include this comment
         // because it helped me to remember what was going on here.)
-        if self.head == std::ptr::null_mut() {
+        if self.head.is_null() {
             return None;
         }
 
@@ -692,12 +704,12 @@ mod tests {
     #[test]
     fn test_multiqueue() {
         let mut queue = MultiQueue::new();
-        assert_eq!(queue.empty(), true);
+        assert!(queue.empty());
         assert_eq!(queue.size(), 0);
         queue.push_back(1).unwrap();
         queue.push_back(2).unwrap();
         queue.push_back(3).unwrap();
-        assert_eq!(queue.empty(), false);
+        assert!(!queue.empty());
         assert_eq!(queue.size(), 3);
         assert_eq!(queue.front(), Some(&1));
         queue.pop_front();
@@ -705,7 +717,7 @@ mod tests {
         queue.pop_front();
         assert_eq!(queue.front(), Some(&3));
         queue.pop_front();
-        assert_eq!(queue.empty(), true);
+        assert!(queue.empty());
         assert_eq!(queue.size(), 0);
     }
 
@@ -725,17 +737,17 @@ mod tests {
         queue.pop_front();
         assert_eq!(queue.front(), Some(&4));
         queue.pop_front();
-        assert_eq!(queue.empty(), true);
+        assert!(queue.empty());
     }
 
     #[test]
     fn test_empty() {
         let mut queue = MultiQueue::new();
-        assert_eq!(queue.empty(), true);
+        assert!(queue.empty());
         queue.push_back(1).unwrap();
-        assert_eq!(queue.empty(), false);
+        assert!(!queue.empty());
         queue.pop_front();
-        assert_eq!(queue.empty(), true);
+        assert!(queue.empty());
     }
 
     #[test]
@@ -1124,8 +1136,8 @@ mod tests {
         let mut queue: MultiQueue<[u8; BUFFER_SIZE]> = MultiQueue::new();
         let mut fork = queue.fork().unwrap();
         let mut buffer = [0u8; BUFFER_SIZE];
-        for i in 0..BUFFER_SIZE {
-            buffer[i] = i as u8;
+        for (i, byte) in buffer.iter_mut().enumerate() {
+            *byte = i as u8;
         }
         queue.push_back(buffer).unwrap();
         fork.push_back(buffer).unwrap();
@@ -1289,7 +1301,7 @@ mod tests {
             // queue.push_back(2).unwrap();
             // queue.push_back(3).unwrap();
 
-            while *thread2_finished2.lock().unwrap() == false {
+            while !*thread2_finished2.lock().unwrap() {
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             }
 

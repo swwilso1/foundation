@@ -77,7 +77,7 @@ impl KeyValueConfigFile {
                     let the_line = if line.ends_with('\n') {
                         &line[0..line.len() - 1]
                     } else {
-                        &line
+                        line
                     };
 
                     let parts: Vec<&str> = the_line.splitn(2, '=').collect();

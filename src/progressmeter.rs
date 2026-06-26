@@ -4,7 +4,7 @@
 /// The `Notifier` type is a type alias for a boxed closure that receives notifications when the
 /// progress meter makes progress towards the total goal. The value passed to the function represents
 /// the current percent completed out of 100.
-pub type Notifier = Box<dyn FnMut(u8) -> () + Send + Sync + 'static>;
+pub type Notifier = Box<dyn FnMut(u8) + Send + Sync + 'static>;
 
 /// The `ProgressMeter` struct provides a simple progress meter for tracking the progress of a
 /// long-running task. The user provides a notification closure or function that receives notifications
@@ -27,6 +27,12 @@ pub struct ProgressMeter {
     last_percent: u8,
 }
 
+impl Default for ProgressMeter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProgressMeter {
     /// Create a new `ProgressMeter` with the default notifier function and a total number of units
     /// to track of 1.
@@ -45,8 +51,8 @@ impl ProgressMeter {
     /// # Arguments
     ///
     /// * `notifier` - The notification function that receives calls when the progress meter makes
-    /// progress towards the total goal (in percentage terms). The value passed to the function
-    /// represents the current percent completed out of 100.
+    ///   progress towards the total goal (in percentage terms). The value passed to the function
+    ///   represents the current percent completed out of 100.
     /// * `meter_total` - The total number of units that the progress meter is tracking.
     ///
     /// # Returns
@@ -87,7 +93,7 @@ impl ProgressMeter {
     /// # Arguments
     ///
     /// * `force` - A flag indicating whether to force a notification even if the progress has not
-    /// changed since the last notification.
+    ///   changed since the last notification.
     pub fn notify(&mut self, force: bool) {
         if self.meter_current > self.meter_total {
             self.meter_current = self.meter_total;
@@ -128,8 +134,8 @@ impl ProgressMeter {
     /// # Arguments
     ///
     /// * `notifier` - The notification function that receives calls when the progress meter makes
-    /// progress towards the total goal (in percentage terms). The value passed to the function
-    /// represents the current percent completed out of 100.
+    ///   progress towards the total goal (in percentage terms). The value passed to the function
+    ///   represents the current percent completed out of 100.
     pub fn set_notifier(&mut self, notifier: Notifier) {
         self.notifier = notifier;
     }

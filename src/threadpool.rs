@@ -26,6 +26,12 @@ pub struct ThreadJob {
     job_list: Vec<Task>,
 }
 
+impl Default for ThreadJob {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ThreadJob {
     /// Create a new `ThreadJob` object.
     pub fn new() -> ThreadJob {
@@ -71,8 +77,8 @@ impl Worker {
     ///
     /// * `id` - The unique identifier for the worker.
     /// * `idle_sender` - The sender channel for sending idle worker notifications.
-    /// The idle worker notifications are just the worker's unique identifier sent back to the
-    /// idle channel.
+    ///   The idle worker notifications are just the worker's unique identifier sent back to the
+    ///   idle channel.
     ///
     /// # Returns
     ///
@@ -212,7 +218,7 @@ pub struct ThreadPool {
     worker_manager: Arc<Mutex<WorkerManager>>,
 
     // The stopper function for stopping the scheduler thread.
-    stopper: Box<dyn Fn() -> () + Send + Sync + 'static>,
+    stopper: Box<dyn Fn() + Send + Sync + 'static>,
 }
 
 impl ThreadPool {
@@ -388,8 +394,8 @@ mod tests {
 
         sleep(Duration::from_millis(200)).await;
 
-        assert_eq!(*control1.lock().unwrap(), true);
-        assert_eq!(*control2.lock().unwrap(), true);
+        assert!(*control1.lock().unwrap());
+        assert!(*control2.lock().unwrap());
 
         thread_pool.stop();
     }
@@ -419,8 +425,8 @@ mod tests {
 
         sleep(Duration::from_millis(200)).await;
 
-        assert_eq!(*control2.lock().unwrap(), true);
-        assert_eq!(*control1.lock().unwrap(), true);
+        assert!(*control2.lock().unwrap());
+        assert!(*control1.lock().unwrap());
 
         thread_pool.stop();
     }
@@ -454,8 +460,8 @@ mod tests {
 
         sleep(Duration::from_millis(200)).await;
 
-        assert_eq!(*control1.lock().unwrap(), true);
-        assert_eq!(*control2.lock().unwrap(), true);
+        assert!(*control1.lock().unwrap());
+        assert!(*control2.lock().unwrap());
 
         thread_pool.stop();
     }
@@ -536,12 +542,12 @@ mod tests {
 
         sleep(Duration::from_millis(2100)).await;
 
-        assert_eq!(*control1.lock().unwrap(), true);
-        assert_eq!(*control2.lock().unwrap(), true);
-        assert_eq!(*control3.lock().unwrap(), true);
-        assert_eq!(*control4.lock().unwrap(), true);
-        assert_eq!(*control5.lock().unwrap(), true);
-        assert_eq!(*control6.lock().unwrap(), true);
+        assert!(*control1.lock().unwrap());
+        assert!(*control2.lock().unwrap());
+        assert!(*control3.lock().unwrap());
+        assert!(*control4.lock().unwrap());
+        assert!(*control5.lock().unwrap());
+        assert!(*control6.lock().unwrap());
 
         thread_pool.stop();
     }
@@ -573,8 +579,8 @@ mod tests {
 
         sleep(Duration::from_millis(200)).await;
 
-        assert_eq!(*control1.lock().unwrap(), true);
-        assert_eq!(*control2.lock().unwrap(), false);
+        assert!(*control1.lock().unwrap());
+        assert!(!(*control2.lock().unwrap()));
 
         thread_pool.stop();
     }
@@ -628,10 +634,10 @@ mod tests {
 
         sleep(Duration::from_millis(200)).await;
 
-        assert_eq!(*control1.lock().unwrap(), true);
-        assert_eq!(*control2.lock().unwrap(), true);
-        assert_eq!(*control3.lock().unwrap(), true);
-        assert_eq!(*control4.lock().unwrap(), true);
+        assert!(*control1.lock().unwrap());
+        assert!(*control2.lock().unwrap());
+        assert!(*control3.lock().unwrap());
+        assert!(*control4.lock().unwrap());
 
         thread_pool.stop();
     }
@@ -734,9 +740,9 @@ mod tests {
         sleep(Duration::from_millis(200)).await;
 
         // The task after the failing task in the same job must have been skipped.
-        assert_eq!(*never_ran.lock().unwrap(), false);
+        assert!(!(*never_ran.lock().unwrap()));
         // A subsequent job must still execute on the same worker.
-        assert_eq!(*ran.lock().unwrap(), true);
+        assert!(*ran.lock().unwrap());
 
         thread_pool.stop();
     }
@@ -764,7 +770,7 @@ mod tests {
 
         sleep(Duration::from_millis(200)).await;
 
-        assert_eq!(*ran.lock().unwrap(), true);
+        assert!(*ran.lock().unwrap());
 
         thread_pool.stop();
     }

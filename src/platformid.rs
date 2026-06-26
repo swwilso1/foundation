@@ -277,6 +277,12 @@ pub struct PlatformId {
     pub processor_architecture: ProcessorArchitecture,
 }
 
+impl Default for PlatformId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PlatformId {
     /// Create a new `PlatformId` instance.
     pub fn new() -> PlatformId {

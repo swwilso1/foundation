@@ -18,7 +18,7 @@ use std::hash::Hash;
 
 /// The handler is a function or closure that takes the data and implements any functionality
 /// needed to process the data.
-pub type Handler<T> = Box<dyn Fn(T) -> () + Send + Sync + 'static>;
+pub type Handler<T> = Box<dyn Fn(T) + Send + Sync + 'static>;
 
 /// The `DelayedHandler` struct is a container for handlers that need to be executed at a later time.
 pub struct DelayedHandler<K: Clone + Hash + PartialEq + Eq, T: Send + Sync + 'static> {
@@ -123,7 +123,7 @@ mod tests {
         sleep(Duration::from_secs(1)).await;
 
         let wrapped_bool = wrapped_bool.lock().unwrap();
-        assert_eq!(*wrapped_bool, true);
+        assert!(*wrapped_bool);
     }
 
     #[tokio::test]

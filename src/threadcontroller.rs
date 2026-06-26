@@ -123,8 +123,8 @@ mod tests {
         let controller = ThreadController::new(false);
         assert!(!controller.should_stop());
         controller.signal();
+        // Reaching this point means `wait` returned without blocking after the signal.
         controller.wait();
-        assert!(true);
         controller.signal_stop();
         assert!(controller.should_stop());
     }

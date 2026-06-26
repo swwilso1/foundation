@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 pub enum DirEntry {
     File(String, String),
 
-    Dir(String, DirHasher),
+    Dir(String, Box<DirHasher>),
 }
 
 /// A directory hasher.
@@ -133,7 +133,8 @@ where
         if path.is_dir() {
             let mut hasher = DirHasher::new(&path);
             hash_directory(&path, &mut hasher, aborter.clone(), meter.clone())?;
-            dir_hasher.add_directory_entry(DirEntry::Dir(path.display().to_string(), hasher));
+            dir_hasher
+                .add_directory_entry(DirEntry::Dir(path.display().to_string(), Box::new(hasher)));
         } else {
             hash_file(&path, dir_hasher, aborter.clone(), meter.clone())?;
         }
@@ -182,7 +183,7 @@ mod tests {
             _ => panic!("Expected DirEntry::File"),
         }
 
-        let dir_entry = DirEntry::Dir("dir".to_string(), DirHasher::new(Path::new("")));
+        let dir_entry = DirEntry::Dir("dir".to_string(), Box::new(DirHasher::new(Path::new(""))));
         match dir_entry {
             DirEntry::Dir(path, _) => {
                 assert_eq!(path, "dir");
@@ -269,7 +270,7 @@ mod tests {
             if let Some(children_value) = json.get("children") {
                 if let Some(children) = children_value.as_array() {
                     assert_eq!(children.len(), 1);
-                    if let Some(child) = children.get(0) {
+                    if let Some(child) = children.first() {
                         if let Some(child_object) = child.as_object() {
                             if let Some(child_hash) = child_object.get("hash") {
                                 assert_eq!(child_hash.as_str().unwrap(), "ed17bcb25c890a296e47385eac148e64e052cb0509a3c6bb34ba2dc578ed7227");
@@ -341,13 +342,10 @@ mod tests {
                                                                                     let the_path = PathBuf::from(path_str);
                                                                                     let filename = the_path.file_name().unwrap().to_str().unwrap();
 
-                                                                                    match filename {
-                                                                                        "file3.txt" => {
-                                                                                            if let Some(hash_value) = second_kid_object.get("hash") {
-                                                                                                assert_eq!(hash_value.as_str().unwrap(), "65e268923166ee125168e80537db6237d64a70b7c4b1b72efe45b3deb25a188d");
-                                                                                            }
+                                                                                    if filename == "file3.txt" {
+                                                                                        if let Some(hash_value) = second_kid_object.get("hash") {
+                                                                                            assert_eq!(hash_value.as_str().unwrap(), "65e268923166ee125168e80537db6237d64a70b7c4b1b72efe45b3deb25a188d");
                                                                                         }
-                                                                                        _ => {}
                                                                                     }
                                                                                 }
                                                                             }
@@ -388,13 +386,10 @@ mod tests {
                                                                                     let the_path = PathBuf::from(path_str);
                                                                                     let filename = the_path.file_name().unwrap().to_str().unwrap();
 
-                                                                                    match filename {
-                                                                                        "file4.txt" => {
-                                                                                            if let Some(hash_value) = third_kid_object.get("hash") {
-                                                                                                assert_eq!(hash_value.as_str().unwrap(), "d7a631e53891573df288e8792c751077c54b5a926a55eb94e137f150bafea945");
-                                                                                            }
+                                                                                    if filename == "file4.txt" {
+                                                                                        if let Some(hash_value) = third_kid_object.get("hash") {
+                                                                                            assert_eq!(hash_value.as_str().unwrap(), "d7a631e53891573df288e8792c751077c54b5a926a55eb94e137f150bafea945");
                                                                                         }
-                                                                                        _ => {}
                                                                                     }
                                                                                 }
                                                                             }
@@ -483,7 +478,7 @@ mod tests {
         child.add_directory_entry(DirEntry::File("f".to_string(), "fh".to_string()));
 
         let mut with_child = DirHasher::new(Path::new("/p"));
-        with_child.add_directory_entry(DirEntry::Dir("/p/child".to_string(), child));
+        with_child.add_directory_entry(DirEntry::Dir("/p/child".to_string(), Box::new(child)));
 
         let mut without_child = DirHasher::new(Path::new("/p"));
 

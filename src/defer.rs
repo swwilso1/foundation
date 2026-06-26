@@ -27,7 +27,7 @@
 /// In using `Defer`, the programmer must often explicitly write a drop() statement in order
 /// to force the compiler to not optimize away the deferred object.
 pub struct Defer {
-    action: Box<dyn FnMut() -> () + Send + Sync + 'static>,
+    action: Box<dyn FnMut() + Send + Sync + 'static>,
 }
 
 impl Defer {
@@ -42,7 +42,7 @@ impl Defer {
     /// A new `Defer` object with the given action.
     pub fn new<F>(action: F) -> Defer
     where
-        F: FnMut() -> () + Send + Sync + 'static,
+        F: FnMut() + Send + Sync + 'static,
     {
         Defer {
             action: Box::new(action),

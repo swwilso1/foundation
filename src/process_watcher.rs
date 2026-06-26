@@ -27,6 +27,12 @@ pub struct ProcessWatcher {
     thread_handle: Option<std::thread::JoinHandle<()>>,
 }
 
+impl Default for ProcessWatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProcessWatcher {
     /// Create a new process watcher.
     pub fn new() -> Self {
@@ -147,7 +153,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(200));
 
         watcher.stop().unwrap();
-        assert!(is_dead.lock().unwrap().clone());
+        assert!(*is_dead.lock().unwrap());
     }
 
     #[test]
@@ -246,7 +252,7 @@ mod tests {
         // Give the watcher a chance to observe the process while it is still alive: the callback
         // must not fire yet.
         std::thread::sleep(std::time::Duration::from_millis(200));
-        assert!(!is_dead.lock().unwrap().clone());
+        assert!(!*is_dead.lock().unwrap());
 
         // Terminate the child and reap it so the PID is fully gone (a zombie still reports as
         // alive to kill(pid, 0)).
@@ -256,6 +262,6 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(300));
         watcher.stop().unwrap();
 
-        assert!(is_dead.lock().unwrap().clone());
+        assert!(*is_dead.lock().unwrap());
     }
 }

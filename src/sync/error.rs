@@ -58,7 +58,7 @@ mod tests {
         let copied = a;
         assert_eq!(a, copied);
 
-        let cloned = a.clone();
+        let cloned = a;
         assert_eq!(a, cloned);
     }
 }
