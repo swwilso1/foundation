@@ -24,6 +24,10 @@ pub(crate) mod tests {
     use super::*;
     use tokio::task::JoinHandle;
 
+    /// A boxed factory that builds a sender/receiver pair for an optional bound, used by the
+    /// shared `test_driver` so both bounded and unbounded tests can supply their own constructor.
+    type ChannelCreator = Box<dyn Fn(Option<usize>) -> (Sender<i32>, Receiver<i32>)>;
+
     #[tokio::test]
     async fn test_channel() {
         let (sender, mut receiver) = channel::<i32>(2);
@@ -65,7 +69,7 @@ pub(crate) mod tests {
         bound: Option<usize>,
         max_send: i32,
         mut receivers: usize,
-        channel_creator: Box<dyn Fn(Option<usize>) -> (Sender<i32>, Receiver<i32>)>,
+        channel_creator: ChannelCreator,
     ) {
         let (sender, receiver) = channel_creator(bound);
         let mut handles: Vec<JoinHandle<()>> = Vec::new();
