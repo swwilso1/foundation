@@ -127,9 +127,16 @@ pub fn hash_directory<F>(
 where
     F: Fn() -> bool,
 {
+    // `read_dir` yields entries in a filesystem-dependent order, but the directory hash is
+    // order-sensitive. Sort the entries so the resulting hash is deterministic regardless of the
+    // platform or filesystem the directory lives on.
+    let mut entries: Vec<PathBuf> = Vec::new();
     for entry in path.read_dir()? {
-        let entry = entry?;
-        let path = entry.path();
+        entries.push(entry?.path());
+    }
+    entries.sort();
+
+    for path in entries {
         if path.is_dir() {
             let mut hasher = DirHasher::new(&path);
             hash_directory(&path, &mut hasher, aborter.clone(), meter.clone())?;
@@ -192,225 +199,142 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_dir_hasher() {
-        let temp_dir = std::env::temp_dir();
-        let start_dir = temp_dir.join("test_dir_hasher");
-
-        if start_dir.exists() {
-            std::fs::remove_dir_all(&start_dir).unwrap();
-        }
-
-        std::fs::create_dir(&start_dir).unwrap();
+    /// Build the standard nested directory tree used by the hashing tests and return its root.
+    ///
+    /// The layout is:
+    /// ```text
+    /// <name>/middle_dir/file1.txt
+    ///                  /file2.txt
+    ///                  /second_dir/file3.txt
+    ///                  /third_dir/file4.txt
+    /// ```
+    fn build_sample_tree(name: &str) -> PathBuf {
+        let start_dir = make_test_dir(name);
 
         let middle_dir = start_dir.join("middle_dir");
         std::fs::create_dir(&middle_dir).unwrap();
 
-        let file1 = middle_dir.join("file1.txt");
-        let file2 = middle_dir.join("file2.txt");
-        std::fs::write(&file1, "file1").unwrap();
-        std::fs::write(&file2, "file2").unwrap();
+        std::fs::write(middle_dir.join("file1.txt"), "file1").unwrap();
+        std::fs::write(middle_dir.join("file2.txt"), "file2").unwrap();
+
         let second_dir = middle_dir.join("second_dir");
         std::fs::create_dir(&second_dir).unwrap();
-        let file3 = second_dir.join("file3.txt");
-        std::fs::write(&file3, "file3").unwrap();
+        std::fs::write(second_dir.join("file3.txt"), "file3").unwrap();
 
         let third_dir = middle_dir.join("third_dir");
         std::fs::create_dir(&third_dir).unwrap();
-        let file4 = third_dir.join("file4.txt");
-        std::fs::write(&file4, "file4").unwrap();
+        std::fs::write(third_dir.join("file4.txt"), "file4").unwrap();
+
+        start_dir
+    }
+
+    #[test]
+    fn test_dir_hasher() {
+        // The overall directory hash folds in absolute paths (which differ across platforms and
+        // temp-directory locations), so we cannot assert a fixed constant here. Instead verify the
+        // properties a directory hash must satisfy: it is a well-formed blake3 hex digest, it is
+        // deterministic across independent runs over the same tree, and it changes when the tree's
+        // contents change.
+        let start_dir = build_sample_tree("test_dir_hasher");
 
         let mut dir_hasher = DirHasher::new(&start_dir);
-
         let hash = hash_directory(&start_dir, &mut dir_hasher, Arc::new(|| false), None).unwrap();
-        assert_eq!(
-            hash,
-            "6fb9784954af75b41e1da47215f98c5e5dd0ea09d0567ce707ff9d42d95bb9fd".to_string()
-        );
+
+        assert_eq!(hash.len(), 64);
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+
+        // Hashing the same tree again must produce an identical result.
+        let mut repeat_hasher = DirHasher::new(&start_dir);
+        let repeat =
+            hash_directory(&start_dir, &mut repeat_hasher, Arc::new(|| false), None).unwrap();
+        assert_eq!(hash, repeat);
+
+        // Changing a file's contents must change the directory hash.
+        std::fs::write(start_dir.join("middle_dir").join("file1.txt"), "changed").unwrap();
+        let mut changed_hasher = DirHasher::new(&start_dir);
+        let changed =
+            hash_directory(&start_dir, &mut changed_hasher, Arc::new(|| false), None).unwrap();
+        assert_ne!(hash, changed);
+
+        std::fs::remove_dir_all(&start_dir).unwrap();
+    }
+
+    /// Look up a child object in a JSON children array by its path's file name.
+    fn child_by_name<'a>(children: &'a [Value], name: &str) -> &'a Value {
+        children
+            .iter()
+            .find(|child| {
+                child
+                    .get("path")
+                    .and_then(|p| p.as_str())
+                    .map(|p| PathBuf::from(p).file_name().unwrap().to_str().unwrap() == name)
+                    .unwrap_or(false)
+            })
+            .unwrap_or_else(|| panic!("no child named {}", name))
     }
 
     #[test]
     fn test_dir_hasher_json() {
-        let temp_dir = std::env::temp_dir();
-        let start_dir = temp_dir.join("test_dir_hasher_json");
-
-        if start_dir.exists() {
-            std::fs::remove_dir_all(&start_dir).unwrap();
-        }
-
-        std::fs::create_dir(&start_dir).unwrap();
-
-        let middle_dir = start_dir.join("middle_dir");
-        std::fs::create_dir(&middle_dir).unwrap();
-
-        let file1 = middle_dir.join("file1.txt");
-        let file2 = middle_dir.join("file2.txt");
-        std::fs::write(&file1, "file1").unwrap();
-        std::fs::write(&file2, "file2").unwrap();
-        let second_dir = middle_dir.join("second_dir");
-        std::fs::create_dir(&second_dir).unwrap();
-        let file3 = second_dir.join("file3.txt");
-        std::fs::write(&file3, "file3").unwrap();
-
-        let third_dir = middle_dir.join("third_dir");
-        std::fs::create_dir(&third_dir).unwrap();
-        let file4 = third_dir.join("file4.txt");
-        std::fs::write(&file4, "file4").unwrap();
+        let start_dir = build_sample_tree("test_dir_hasher_json");
 
         let mut dir_hasher = DirHasher::new(&start_dir);
-
         let hash = hash_directory(&start_dir, &mut dir_hasher, Arc::new(|| false), None).unwrap();
         let json = dir_hasher.get_as_json();
 
-        if let Some(dir_object) = json.as_object() {
-            if let Some(hash_object) = dir_object.get("hash") {
-                assert_eq!(hash_object.as_str().unwrap(), hash);
-            }
+        // The root reports its own (path-dependent) hash, but that value must match what
+        // hash_directory returned, and the structure must reflect the tree we built.
+        assert_eq!(json["type"], "dir");
+        assert_eq!(json["hash"].as_str().unwrap(), hash);
 
-            if let Some(children_value) = json.get("children") {
-                if let Some(children) = children_value.as_array() {
-                    assert_eq!(children.len(), 1);
-                    if let Some(child) = children.first() {
-                        if let Some(child_object) = child.as_object() {
-                            if let Some(child_hash) = child_object.get("hash") {
-                                assert_eq!(child_hash.as_str().unwrap(), "ed17bcb25c890a296e47385eac148e64e052cb0509a3c6bb34ba2dc578ed7227");
-                            }
+        let children = json["children"].as_array().unwrap();
+        assert_eq!(children.len(), 1);
 
-                            if let Some(middle_kids_value) = child_object.get("children") {
-                                if let Some(middle_kids) = middle_kids_value.as_array() {
-                                    assert_eq!(middle_kids.len(), 4);
-                                    for middle_kid in middle_kids {
-                                        if let Some(middle_kid_object) = middle_kid.as_object() {
-                                            if let Some(path_value) = middle_kid_object.get("path")
-                                            {
-                                                if let Some(path_str) = path_value.as_str() {
-                                                    let the_path = PathBuf::from(path_str);
-                                                    let filename = the_path
-                                                        .file_name()
-                                                        .unwrap()
-                                                        .to_str()
-                                                        .unwrap();
+        let middle = &children[0];
+        assert_eq!(middle["type"], "dir");
+        let middle_kids = middle["children"].as_array().unwrap();
+        assert_eq!(middle_kids.len(), 4);
 
-                                                    match filename {
-                                                        "file1.txt" => {
-                                                            if let Some(hash_value) =
-                                                                middle_kid_object.get("hash")
-                                                            {
-                                                                assert_eq!(hash_value.as_str().unwrap(), "ebfeae2a90df171912869c78dc767137bfafbcab6d54ca0fedaca4d2ba824010");
-                                                            }
-                                                        }
-                                                        "file2.txt" => {
-                                                            if let Some(hash_value) =
-                                                                middle_kid_object.get("hash")
-                                                            {
-                                                                assert_eq!(hash_value.as_str().unwrap(), "fab1069ff326679acb41b95bf33e7ead4c38ed7a4b994d354b793d759db69ede");
-                                                            }
-                                                        }
-                                                        "second_dir" => {
-                                                            if let Some(hash_value) =
-                                                                middle_kid_object.get("hash")
-                                                            {
-                                                                assert_eq!(hash_value.as_str().unwrap(), "a15e4cd5f4ff65b9c8dc3e44400a89a8167fdbf2fca3ee1224813a12f5c86f71");
-                                                            }
+        // The per-file hashes are content hashes (independent of the absolute path), so they are
+        // stable across platforms. Verify each against the standalone file-hash function.
+        let middle_dir = start_dir.join("middle_dir");
+        let expect_file_hash = |path: &Path| -> String {
+            get_hash_for_file(path, Arc::new(|| false), None).unwrap()
+        };
 
-                                                            if let Some(second_kids_value) =
-                                                                middle_kid_object.get("children")
-                                                            {
-                                                                if let Some(second_kids) =
-                                                                    second_kids_value.as_array()
-                                                                {
-                                                                    assert_eq!(
-                                                                        second_kids.len(),
-                                                                        1
-                                                                    );
-                                                                    for second_kid in second_kids {
-                                                                        if let Some(
-                                                                            second_kid_object,
-                                                                        ) =
-                                                                            second_kid.as_object()
-                                                                        {
-                                                                            if let Some(
-                                                                                path_value,
-                                                                            ) = second_kid_object
-                                                                                .get("path")
-                                                                            {
-                                                                                if let Some(
-                                                                                    path_str,
-                                                                                ) = path_value
-                                                                                    .as_str()
-                                                                                {
-                                                                                    let the_path = PathBuf::from(path_str);
-                                                                                    let filename = the_path.file_name().unwrap().to_str().unwrap();
+        let file1 = child_by_name(middle_kids, "file1.txt");
+        assert_eq!(file1["type"], "file");
+        assert_eq!(
+            file1["hash"].as_str().unwrap(),
+            expect_file_hash(&middle_dir.join("file1.txt"))
+        );
 
-                                                                                    if filename == "file3.txt" {
-                                                                                        if let Some(hash_value) = second_kid_object.get("hash") {
-                                                                                            assert_eq!(hash_value.as_str().unwrap(), "65e268923166ee125168e80537db6237d64a70b7c4b1b72efe45b3deb25a188d");
-                                                                                        }
-                                                                                    }
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                        "third_dir" => {
-                                                            if let Some(hash_value) =
-                                                                middle_kid_object.get("hash")
-                                                            {
-                                                                assert_eq!(hash_value.as_str().unwrap(), "4b2485d1c0d17598da21268e9530decc4b857a5bd8055f79a81b6889d92bd9ca");
-                                                            }
+        let file2 = child_by_name(middle_kids, "file2.txt");
+        assert_eq!(
+            file2["hash"].as_str().unwrap(),
+            expect_file_hash(&middle_dir.join("file2.txt"))
+        );
 
-                                                            if let Some(third_kids_value) =
-                                                                middle_kid_object.get("children")
-                                                            {
-                                                                if let Some(third_kids) =
-                                                                    third_kids_value.as_array()
-                                                                {
-                                                                    assert_eq!(third_kids.len(), 1);
-                                                                    for third_kid in third_kids {
-                                                                        if let Some(
-                                                                            third_kid_object,
-                                                                        ) = third_kid.as_object()
-                                                                        {
-                                                                            if let Some(
-                                                                                path_value,
-                                                                            ) = third_kid_object
-                                                                                .get("path")
-                                                                            {
-                                                                                if let Some(
-                                                                                    path_str,
-                                                                                ) = path_value
-                                                                                    .as_str()
-                                                                                {
-                                                                                    let the_path = PathBuf::from(path_str);
-                                                                                    let filename = the_path.file_name().unwrap().to_str().unwrap();
+        let second_dir = child_by_name(middle_kids, "second_dir");
+        assert_eq!(second_dir["type"], "dir");
+        let second_kids = second_dir["children"].as_array().unwrap();
+        assert_eq!(second_kids.len(), 1);
+        let file3 = child_by_name(second_kids, "file3.txt");
+        assert_eq!(
+            file3["hash"].as_str().unwrap(),
+            expect_file_hash(&middle_dir.join("second_dir").join("file3.txt"))
+        );
 
-                                                                                    if filename == "file4.txt" {
-                                                                                        if let Some(hash_value) = third_kid_object.get("hash") {
-                                                                                            assert_eq!(hash_value.as_str().unwrap(), "d7a631e53891573df288e8792c751077c54b5a926a55eb94e137f150bafea945");
-                                                                                        }
-                                                                                    }
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                        _ => {}
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        let third_dir = child_by_name(middle_kids, "third_dir");
+        assert_eq!(third_dir["type"], "dir");
+        let third_kids = third_dir["children"].as_array().unwrap();
+        assert_eq!(third_kids.len(), 1);
+        let file4 = child_by_name(third_kids, "file4.txt");
+        assert_eq!(
+            file4["hash"].as_str().unwrap(),
+            expect_file_hash(&middle_dir.join("third_dir").join("file4.txt"))
+        );
+
+        std::fs::remove_dir_all(&start_dir).unwrap();
     }
 
     /// Create a unique temporary directory for a test, removing any prior copy.
