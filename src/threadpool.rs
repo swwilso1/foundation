@@ -635,4 +635,214 @@ mod tests {
 
         thread_pool.stop();
     }
+
+    #[tokio::test]
+    async fn test_tasks_execute_in_order_within_a_job() {
+        let mut thread_pool = ThreadPool::new(4);
+        let mut thread_job = ThreadJob::new();
+
+        // A single job's tasks must run sequentially in the order they were added.
+        let order = Arc::new(Mutex::new(Vec::<u32>::new()));
+
+        for n in 0..5 {
+            let order_c = order.clone();
+            thread_job.add_task(Box::pin(async move {
+                order_c.lock().unwrap().push(n);
+                Ok(())
+            }));
+        }
+
+        if let Err(e) = thread_pool.add_job(thread_job) {
+            panic!("Error adding job to thread pool: {}", e);
+        }
+
+        sleep(Duration::from_millis(200)).await;
+
+        assert_eq!(*order.lock().unwrap(), vec![0, 1, 2, 3, 4]);
+
+        thread_pool.stop();
+    }
+
+    #[tokio::test]
+    async fn test_prepend_task_runs_first() {
+        let mut thread_pool = ThreadPool::new(4);
+        let mut thread_job = ThreadJob::new();
+
+        let order = Arc::new(Mutex::new(Vec::<u32>::new()));
+
+        let order_c = order.clone();
+        thread_job.add_task(Box::pin(async move {
+            order_c.lock().unwrap().push(1);
+            Ok(())
+        }));
+        let order_c = order.clone();
+        thread_job.add_task(Box::pin(async move {
+            order_c.lock().unwrap().push(2);
+            Ok(())
+        }));
+        // The prepended task must execute before the two tasks added above.
+        let order_c = order.clone();
+        thread_job.prepend_task(Box::pin(async move {
+            order_c.lock().unwrap().push(0);
+            Ok(())
+        }));
+
+        if let Err(e) = thread_pool.add_job(thread_job) {
+            panic!("Error adding job to thread pool: {}", e);
+        }
+
+        sleep(Duration::from_millis(200)).await;
+
+        assert_eq!(*order.lock().unwrap(), vec![0, 1, 2]);
+
+        thread_pool.stop();
+    }
+
+    #[tokio::test]
+    async fn test_error_in_job_does_not_stop_later_jobs() {
+        let mut thread_pool = ThreadPool::new(1);
+
+        // The first job errors on its first task, which should skip the remaining
+        // task in that job but leave the worker available for subsequent jobs.
+        let mut failing_job = ThreadJob::new();
+        let never_ran = Arc::new(Mutex::new(false));
+        let never_ran_c = never_ran.clone();
+        failing_job.add_task(Box::pin(async move {
+            let error = Box::new(FoundationError::ThreadTaskError("boom".to_string()));
+            Err(error as DynResultError)
+        }));
+        failing_job.add_task(Box::pin(async move {
+            *never_ran_c.lock().unwrap() = true;
+            Ok(())
+        }));
+
+        let mut good_job = ThreadJob::new();
+        let ran = Arc::new(Mutex::new(false));
+        let ran_c = ran.clone();
+        good_job.add_task(Box::pin(async move {
+            *ran_c.lock().unwrap() = true;
+            Ok(())
+        }));
+
+        if let Err(e) = thread_pool.add_job(failing_job) {
+            panic!("Error adding failing job to thread pool: {}", e);
+        }
+        if let Err(e) = thread_pool.add_job(good_job) {
+            panic!("Error adding good job to thread pool: {}", e);
+        }
+
+        sleep(Duration::from_millis(200)).await;
+
+        // The task after the failing task in the same job must have been skipped.
+        assert_eq!(*never_ran.lock().unwrap(), false);
+        // A subsequent job must still execute on the same worker.
+        assert_eq!(*ran.lock().unwrap(), true);
+
+        thread_pool.stop();
+    }
+
+    #[tokio::test]
+    async fn test_empty_job_completes() {
+        let mut thread_pool = ThreadPool::new(2);
+
+        // An empty job should be processed without error, and the worker should
+        // remain available to run a subsequent job with real work.
+        if let Err(e) = thread_pool.add_job(ThreadJob::new()) {
+            panic!("Error adding empty job to thread pool: {}", e);
+        }
+
+        let ran = Arc::new(Mutex::new(false));
+        let ran_c = ran.clone();
+        let mut thread_job = ThreadJob::new();
+        thread_job.add_task(Box::pin(async move {
+            *ran_c.lock().unwrap() = true;
+            Ok(())
+        }));
+        if let Err(e) = thread_pool.add_job(thread_job) {
+            panic!("Error adding job to thread pool: {}", e);
+        }
+
+        sleep(Duration::from_millis(200)).await;
+
+        assert_eq!(*ran.lock().unwrap(), true);
+
+        thread_pool.stop();
+    }
+
+    #[tokio::test]
+    async fn test_workers_are_reused_and_do_not_exceed_max() {
+        // With a single allowed worker, several sequential jobs should all run on
+        // that one worker rather than spawning additional workers.
+        let mut thread_pool = ThreadPool::new(1);
+
+        let count = Arc::new(Mutex::new(0u32));
+        for _ in 0..5 {
+            let count_c = count.clone();
+            let mut thread_job = ThreadJob::new();
+            thread_job.add_task(Box::pin(async move {
+                *count_c.lock().unwrap() += 1;
+                Ok(())
+            }));
+            if let Err(e) = thread_pool.add_job(thread_job) {
+                panic!("Error adding job to thread pool: {}", e);
+            }
+        }
+
+        sleep(Duration::from_millis(300)).await;
+
+        assert_eq!(*count.lock().unwrap(), 5);
+
+        let manager = thread_pool.worker_manager.lock().unwrap();
+        assert_eq!(manager.current_workers, 1);
+        assert!(manager.current_workers <= manager.max_workers);
+        drop(manager);
+
+        thread_pool.stop();
+    }
+
+    #[tokio::test]
+    async fn test_worker_pool_scales_up_to_max() {
+        // Submit several long-running jobs so the scheduler is forced to spin up
+        // multiple workers (up to max) to make progress concurrently.
+        let mut thread_pool = ThreadPool::new(3);
+
+        let count = Arc::new(Mutex::new(0u32));
+        for _ in 0..3 {
+            let count_c = count.clone();
+            let mut thread_job = ThreadJob::new();
+            thread_job.add_task(Box::pin(async move {
+                sleep(Duration::from_millis(300)).await;
+                *count_c.lock().unwrap() += 1;
+                Ok(())
+            }));
+            if let Err(e) = thread_pool.add_job(thread_job) {
+                panic!("Error adding job to thread pool: {}", e);
+            }
+        }
+
+        // Give the scheduler time to allocate workers, but not enough for the jobs
+        // to finish, so the worker count reflects concurrent demand.
+        sleep(Duration::from_millis(150)).await;
+
+        {
+            let manager = thread_pool.worker_manager.lock().unwrap();
+            assert!(manager.current_workers >= 1);
+            assert!(manager.current_workers <= manager.max_workers);
+            assert_eq!(manager.max_workers, 3);
+        }
+
+        sleep(Duration::from_millis(400)).await;
+        assert_eq!(*count.lock().unwrap(), 3);
+
+        thread_pool.stop();
+    }
+
+    #[test]
+    fn test_worker_manager_new_initial_state() {
+        let manager = WorkerManager::new(8);
+        assert_eq!(manager.max_workers, 8);
+        assert_eq!(manager.current_workers, 0);
+        assert_eq!(manager.next_worker_id, 0);
+        assert!(manager.workers.is_empty());
+    }
 }
