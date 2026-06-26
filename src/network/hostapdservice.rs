@@ -205,6 +205,7 @@ mod tests {
     use super::*;
     use crate::network::networkconfiguration::AddressMode;
     use crate::network::networkinterface::NetworkInterface;
+    use tempfile::TempDir;
 
     // Note that this service can lose configuration fidelity in the sense that the hostapd configuration
     // file does not contain all settings supported by this library's notion of a network configuration.
@@ -215,6 +216,9 @@ mod tests {
 
     #[test]
     fn test_hostapd_service() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("hostapd.conf");
+
         let interface = NetworkInterface::new_with_name("wlan0");
         let mut wifi_config = WirelessConfiguration::default();
         wifi_config.mode = WirelessMode::AccessPoint;
@@ -223,6 +227,8 @@ mod tests {
         wifi_config.standard = WirelessStandard::N;
         wifi_config.channel = 5;
         wifi_config.wpa_mode = 8;
+        wifi_config.ieee80211n = true;
+        wifi_config.wmm_enabled = true;
         wifi_config.wpa_key_mgmt = Some("WPA-PSK".to_string());
         wifi_config.wpa_pairwise = Some("BUBBA".to_string());
         wifi_config.rsn_pairwise = Some("FLUBBA".to_string());
@@ -231,7 +237,7 @@ mod tests {
         let mut config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
         config_map.insert("wlan0".to_string(), config);
 
-        let mut hostapd_service = HostAPDService::new(PathBuf::from("/tmp/hostapd.conf"));
+        let mut hostapd_service = HostAPDService::new(path);
         let result = hostapd_service.write_configuration(&config_map);
         assert!(result.is_ok());
 
@@ -246,5 +252,80 @@ mod tests {
         other_config_map.insert("wlan0".to_string(), other_config);
         let result = hostapd_service.load_configuration(&mut other_config_map);
         assert!(result.is_ok());
+
+        // Verify the parsed configuration actually round-trips the values hostapd persists.
+        let loaded = other_config_map
+            .get("wlan0")
+            .and_then(|c| c.wifi_configuration.as_ref())
+            .expect("loaded wlan0 wifi configuration");
+        assert_eq!(loaded.mode, WirelessMode::AccessPoint);
+        assert_eq!(loaded.ssid, "HoneyBadgerHut");
+        assert_eq!(loaded.password, Some("NUTHUT".to_string()));
+        assert_eq!(loaded.standard, WirelessStandard::N);
+        assert_eq!(loaded.channel, 5);
+        assert_eq!(loaded.wpa_mode, 8);
+        assert!(loaded.ieee80211n);
+        assert!(loaded.wmm_enabled);
+        assert_eq!(loaded.wpa_key_mgmt, Some("WPA-PSK".to_string()));
+        assert_eq!(loaded.wpa_pairwise, Some("BUBBA".to_string()));
+        assert_eq!(loaded.rsn_pairwise, Some("FLUBBA".to_string()));
+    }
+
+    #[test]
+    fn test_load_configuration_missing_file_errors() {
+        let dir = TempDir::new().unwrap();
+        let mut service = HostAPDService::new(dir.path().join("missing_hostapd.conf"));
+        let mut config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
+        let result = service.load_configuration(&mut config_map);
+        assert!(matches!(result, Err(FoundationError::OperationFailed(_))));
+    }
+
+    #[test]
+    fn test_write_configuration_skips_client_mode() {
+        // hostapd only configures access points; a client-mode wifi config must not produce a file.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("hostapd_client.conf");
+
+        let interface = NetworkInterface::new_with_name("wlan0");
+        let mut wifi_config = WirelessConfiguration::default();
+        wifi_config.mode = WirelessMode::Client;
+        wifi_config.ssid = "SomeNetwork".to_string();
+        let config =
+            NetworkConfiguration::new(AddressMode::DHCP, interface, true, Some(wifi_config), None);
+        let mut config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
+        config_map.insert("wlan0".to_string(), config);
+
+        let service = HostAPDService::new(path.clone());
+        service.write_configuration(&config_map).unwrap();
+
+        assert!(!path.exists(), "client-mode config must not write a hostapd file");
+    }
+
+    #[test]
+    fn test_write_configuration_skips_disabled_config() {
+        // Disabled interfaces are skipped entirely by the writer.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("hostapd_disabled.conf");
+
+        let interface = NetworkInterface::new_with_name("wlan0");
+        let mut wifi_config = WirelessConfiguration::default();
+        wifi_config.mode = WirelessMode::AccessPoint;
+        wifi_config.ssid = "DisabledAP".to_string();
+        let config =
+            NetworkConfiguration::new(AddressMode::DHCP, interface, false, Some(wifi_config), None);
+        let mut config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
+        config_map.insert("wlan0".to_string(), config);
+
+        let service = HostAPDService::new(path.clone());
+        service.write_configuration(&config_map).unwrap();
+
+        assert!(!path.exists(), "disabled config must not write a hostapd file");
+    }
+
+    #[test]
+    fn test_get_configuration_file() {
+        let path = PathBuf::from("/tmp/some_hostapd_path.conf");
+        let service = HostAPDService::new(path.clone());
+        assert_eq!(service.get_configuration_file(), path);
     }
 }

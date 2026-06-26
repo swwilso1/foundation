@@ -219,6 +219,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_async_copy_empty_file() {
+        // A zero-byte source means the sendfile loop never executes; the destination must still be
+        // created (and truncated) so that it ends up as an empty file.
+        let src_file = NamedTempFile::new().unwrap();
+        let src_path = src_file.path().to_path_buf();
+
+        let dir = TempDir::new().unwrap();
+        let dest_path = dir.path().join("empty_dest");
+
+        async_copy(&src_path, &dest_path, Arc::new(|| false), None)
+            .await
+            .unwrap();
+
+        assert!(dest_path.exists());
+        assert_eq!(fs::metadata(&dest_path).unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_async_copy_truncates_existing_destination() {
+        // The destination is opened with truncate(true), so pre-existing longer content must be
+        // replaced entirely by the (shorter) source content.
+        let mut src_file = NamedTempFile::new().unwrap();
+        write!(src_file, "short").unwrap();
+        src_file.flush().unwrap();
+
+        let mut dest_file = NamedTempFile::new().unwrap();
+        write!(dest_file, "this is a much longer pre-existing payload").unwrap();
+        dest_file.flush().unwrap();
+        let dest_path = dest_file.path().to_path_buf();
+
+        async_copy(src_file.path(), &dest_path, Arc::new(|| false), None)
+            .await
+            .unwrap();
+
+        assert_eq!(fs::read_to_string(&dest_path).unwrap(), "short");
+    }
+
+    #[tokio::test]
     async fn test_async_copy_with_aborter() {
         let mut src_file = NamedTempFile::new().unwrap();
         let lorem_ipsum = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\

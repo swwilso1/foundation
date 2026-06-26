@@ -448,6 +448,7 @@ impl NetworkService for DHCPCDService {
 mod tests {
     use super::*;
     use std::net::Ipv4Addr;
+    use tempfile::TempDir;
 
     // Note that this service can lose configuration fidelity in the sense that the dhcpcd configuration
     // file does not contain all settings supported by this library's notion of a network configuration.
@@ -512,5 +513,75 @@ mod tests {
 
         let other_dhcpc_config = dhcpcd_service.get_configuration();
         assert_eq!(dhcpcd_config, *other_dhcpc_config);
+    }
+
+    #[test]
+    fn test_dhcpcd_ipv6_static_roundtrip() {
+        use std::net::Ipv6Addr;
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("dhcpcd_ipv6.conf");
+
+        let mut interface = NetworkInterface::new_with_name("eth0");
+        interface.addresses.push(
+            InterfaceAddr::try_from("fc00::10/64").expect("valid ipv6 cidr"),
+        );
+        interface
+            .gateway_addresses
+            .push(IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1)));
+        interface
+            .nameserver_addresses
+            .push(IpAddr::V6(Ipv6Addr::new(0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8888)));
+        let config = NetworkConfiguration::new(AddressMode::Static, interface, true, None, None);
+        let mut config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
+        config_map.insert("eth0".to_string(), config);
+
+        let mut service = DHCPCDService::new(path);
+        service.write_configuration(&config_map).unwrap();
+
+        let mut loaded: HashMap<String, NetworkConfiguration> = HashMap::new();
+        service.load_configuration(&mut loaded).unwrap();
+        assert_eq!(config_map, loaded);
+    }
+
+    #[test]
+    fn test_load_configuration_missing_file_errors() {
+        let dir = TempDir::new().unwrap();
+        let mut service = DHCPCDService::new(dir.path().join("does_not_exist.conf"));
+        let mut config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
+        let result = service.load_configuration(&mut config_map);
+        // A missing file surfaces as an IO error from read_to_string.
+        assert!(matches!(result, Err(FoundationError::IO(_))));
+    }
+
+    #[test]
+    fn test_load_configuration_malformed_file_errors() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("garbage.conf");
+        // A bare token that is not a recognized declaration cannot be parsed by the grammar.
+        std::fs::write(&path, "this_is_not_a_valid_directive\n").unwrap();
+
+        let mut service = DHCPCDService::new(path);
+        let mut config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
+        let result = service.load_configuration(&mut config_map);
+        assert!(matches!(result, Err(FoundationError::OperationFailed(_))));
+    }
+
+    #[test]
+    fn test_get_configuration_file() {
+        let path = PathBuf::from("/tmp/some_dhcpcd_path.conf");
+        let service = DHCPCDService::new(path.clone());
+        assert_eq!(service.get_configuration_file(), path);
+    }
+
+    #[test]
+    fn test_new_configuration_defaults_to_all_false() {
+        let config = DHCPCDConfiguration::new();
+        assert!(!config.rapid_commit);
+        assert!(!config.hostname);
+        assert!(!config.duid);
+        assert!(!config.persistent);
+        assert!(!config.domain_name_servers);
+        assert!(!config.slaac_private);
     }
 }

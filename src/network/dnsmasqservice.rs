@@ -109,6 +109,7 @@ mod tests {
     use crate::network::networkconfiguration::AddressMode;
     use crate::network::networkinterface::NetworkInterface;
     use crate::network::wireless::configuration::WirelessConfiguration;
+    use tempfile::TempDir;
 
     // Note that this service can lose configuration fidelity in the sense that the dnsmasq configuration
     // file does not contain all settings supported by this library's notion of a network configuration.
@@ -155,5 +156,39 @@ mod tests {
         );
 
         dnsmasq_service.remove_config_file().unwrap();
+    }
+
+    #[test]
+    fn test_load_configuration_missing_file_errors() {
+        let dir = TempDir::new().unwrap();
+        let mut service = DNSMasqService::new(dir.path().join("missing_dnsmasq.conf"));
+        let mut config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
+        let result = service.load_configuration(&mut config_map);
+        assert!(matches!(result, Err(FoundationError::OperationFailed(_))));
+    }
+
+    #[test]
+    fn test_write_configuration_skips_non_ap_dhcp_config() {
+        // A config that lacks both a wifi configuration and a dhcp range must not produce a file:
+        // dnsmasq only writes entries for enabled access points that serve a DHCP range.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("dnsmasq_skip.conf");
+
+        let interface = NetworkInterface::new_with_name("eth0");
+        let config = NetworkConfiguration::new(AddressMode::DHCP, interface, true, None, None);
+        let mut config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
+        config_map.insert("eth0".to_string(), config);
+
+        let service = DNSMasqService::new(path.clone());
+        service.write_configuration(&config_map).unwrap();
+
+        assert!(!path.exists(), "no file should be written for a non-AP config");
+    }
+
+    #[test]
+    fn test_get_configuration_file() {
+        let path = PathBuf::from("/tmp/some_dnsmasq_path.conf");
+        let service = DNSMasqService::new(path.clone());
+        assert_eq!(service.get_configuration_file(), path);
     }
 }

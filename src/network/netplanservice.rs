@@ -372,6 +372,16 @@ impl NetworkService for NetplanService {
         &self,
         configurations: &HashMap<String, NetworkConfiguration>,
     ) -> Result<(), FoundationError> {
+        // A previous call to this function sets the file mode to 0o400 (read-only) below. If the
+        // file already exists from such a call, opening it for writing would fail with a permission
+        // error, breaking the normal load/modify/write cycle. Restore owner write permission first
+        // so we can truncate and rewrite it.
+        if let Ok(metadata) = std::fs::metadata(&self.filename) {
+            let mut permissions = metadata.permissions();
+            permissions.set_mode(0o600);
+            std::fs::set_permissions(&self.filename, permissions)?;
+        }
+
         match std::fs::OpenOptions::new()
             .write(true)
             .truncate(true)
@@ -544,6 +554,7 @@ mod tests {
     use super::*;
     use crate::network::networkinterface::NetworkInterface;
     use std::net::Ipv4Addr;
+    use tempfile::TempDir;
 
     // Note that this service can lose configuration fidelity in the sense that the netplan configuration
     // file does not contain all settings supported by this library's notion of a network configuration.
@@ -725,5 +736,82 @@ mod tests {
         assert_eq!(reread_map.get("wlan0").unwrap().interface.addresses.len(), 1);
 
         netplan_service.remove_config_file().unwrap();
+    }
+
+    // An access-point wifi configuration is rendered into the `ethernets` section (netplan manages
+    // the underlying link; hostapd drives the AP itself). This exercises the AccessPoint branch of
+    // should_use_config_for_ethernets. Reloading reads the entry back as a plain ethernet, so the
+    // wifi-specific fields are intentionally not preserved.
+    #[test]
+    fn test_access_point_written_as_ethernet() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("ap_netplan.yaml");
+
+        let mut config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
+        let interface = NetworkInterface::new_with_name("wlan0");
+        let mut wifi_config = WirelessConfiguration::default();
+        wifi_config.mode = WirelessMode::AccessPoint;
+        wifi_config.ssid = "MyAccessPoint".to_string();
+        let config =
+            NetworkConfiguration::new(AddressMode::DHCP, interface, true, Some(wifi_config), None);
+        config_map.insert("wlan0".to_string(), config);
+
+        let mut netplan_service = NetplanService::new(path);
+        netplan_service.write_configuration(&config_map).unwrap();
+
+        let mut read_config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
+        netplan_service.load_configuration(&mut read_config_map).unwrap();
+
+        let loaded = read_config_map.get("wlan0").expect("wlan0 present in ethernets");
+        assert!(loaded.enabled);
+        assert_eq!(loaded.address_mode, AddressMode::DHCP);
+        // The wifi configuration is not round-tripped through the ethernets section.
+        assert!(loaded.wifi_configuration.is_none());
+    }
+
+    #[test]
+    fn test_write_configuration_overwrites_existing_read_only_file() {
+        // The writer marks the file read-only (0o400) when finished. A second write (a normal
+        // load/modify/write cycle) must still succeed by restoring write permission first.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("overwrite_netplan.yaml");
+
+        let mut config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
+        let interface = NetworkInterface::new_with_name("eth0");
+        let config = NetworkConfiguration::new(AddressMode::DHCP, interface, true, None, None);
+        config_map.insert("eth0".to_string(), config);
+
+        let netplan_service = NetplanService::new(path);
+        netplan_service.write_configuration(&config_map).unwrap();
+        // The second write would fail with EACCES if the read-only mode were not handled.
+        netplan_service.write_configuration(&config_map).unwrap();
+    }
+
+    #[test]
+    fn test_load_configuration_missing_file_errors() {
+        let dir = TempDir::new().unwrap();
+        let mut netplan_service = NetplanService::new(dir.path().join("missing_netplan.yaml"));
+        let mut config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
+        let result = netplan_service.load_configuration(&mut config_map);
+        assert!(matches!(result, Err(FoundationError::IO(_))));
+    }
+
+    #[test]
+    fn test_load_configuration_malformed_yaml_errors() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("bad_netplan.yaml");
+        std::fs::write(&path, "network: [this: is, not: valid: yaml\n").unwrap();
+
+        let mut netplan_service = NetplanService::new(path);
+        let mut config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
+        let result = netplan_service.load_configuration(&mut config_map);
+        assert!(matches!(result, Err(FoundationError::SerdeYamlError(_))));
+    }
+
+    #[test]
+    fn test_get_configuration_file() {
+        let path = PathBuf::from("/tmp/some_netplan_path.yaml");
+        let netplan_service = NetplanService::new(path.clone());
+        assert_eq!(netplan_service.get_configuration_file(), path);
     }
 }
