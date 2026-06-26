@@ -118,7 +118,7 @@ impl<T> Channel<T> {
     /// * `which` - An enum indicating whether to use the sender or receiver maps.
     pub fn wake(&mut self, which: WhichWaker) {
         let table = self.which_table(which);
-        for (_id, waker) in table {
+        for waker in table.values() {
             waker.wake_by_ref();
         }
     }

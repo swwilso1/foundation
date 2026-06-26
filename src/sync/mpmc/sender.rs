@@ -48,7 +48,7 @@ impl<T: Clone> Sender<T> {
     ///
     /// * `channel` - The shared [`Channel`] object.
     /// * `bound` - Some(n) indicates that the channel should have no more than n messages in the
-    /// channel and None indicates and unbounded channel.
+    ///   channel and None indicates and unbounded channel.
     ///
     /// # Returns
     ///
@@ -59,20 +59,6 @@ impl<T: Clone> Sender<T> {
         Sender {
             channel,
             bound,
-            id: Uuid::new_v4(),
-        }
-    }
-
-    /// Clone the sending channel to create multiple senders.
-    ///
-    /// # Returns
-    ///
-    /// A sender that shares the channel with the requester.
-    pub fn clone(&self) -> Sender<T> {
-        increment_senders(&self.channel);
-        Sender {
-            channel: self.channel.clone(),
-            bound: self.bound,
             id: Uuid::new_v4(),
         }
     }
@@ -126,7 +112,7 @@ impl<T: Clone> Sender<T> {
     pub async fn send(&self, thing: T) -> Result<(), SendError<T>> {
         // The 'await' happens here, so we do not pass thing into a closure that then needs
         // to go into the channel.send() function.
-        if let Err(_) = self.get_send_space().await {
+        if self.get_send_space().await.is_err() {
             return Err(SendError(thing));
         }
         match self.channel.lock() {
@@ -150,6 +136,20 @@ impl<T: Clone> Sender<T> {
     /// A new [`Receiver`] object that will receive messages from the channel.
     pub fn subscribe(&self) -> Receiver<T> {
         Receiver::new(self.channel.clone())
+    }
+}
+
+impl<T: Clone> Clone for Sender<T> {
+    /// Clone the sending channel to create multiple senders.
+    ///
+    /// The returned sender shares the channel with the requester.
+    fn clone(&self) -> Sender<T> {
+        increment_senders(&self.channel);
+        Sender {
+            channel: self.channel.clone(),
+            bound: self.bound,
+            id: Uuid::new_v4(),
+        }
     }
 }
 

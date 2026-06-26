@@ -108,7 +108,7 @@ impl<T: Clone> Receiver<T> {
     /// Some(msg) when the channel is open and has a message, otherwise None
     /// when the channel has closed.
     pub async fn recv(&mut self) -> Option<T> {
-        if let Err(_) = self.get_something_to_receive().await {
+        if self.get_something_to_receive().await.is_err() {
             return None;
         }
 
