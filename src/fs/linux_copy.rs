@@ -18,7 +18,7 @@ const BLOCKSIZE: libc::size_t = 8388608;
 /// * `dest` - A reference to a Path representing the destination file.
 /// * `aborter` - A function that returns true if the copy should abort and false otherwise.
 /// * `meter` - An optional Arc<Mutex<ProgressMeter>>. If provided, the ProgressMeter will be
-/// updated with the number of bytes copied.
+///   updated with the number of bytes copied.
 ///
 /// # Returns
 ///
@@ -247,10 +247,7 @@ mod tests {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_millis();
-                if later - now > 2 {
-                    return true;
-                }
-                return false;
+                later - now > 2
             }),
             None,
         )

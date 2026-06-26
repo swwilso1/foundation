@@ -15,7 +15,7 @@ const BLOCKSIZE: libc::size_t = 8388608;
 /// * `src` - A reference to a Path representing the source file.
 /// * `dest` - A reference to a Path representing the destination file.
 /// * `meter` - An optional Arc<Mutex<ProgressMeter>>. If provided, the ProgressMeter will be
-/// updated with the number of bytes copied.
+///   updated with the number of bytes copied.
 ///
 /// # Returns
 ///
