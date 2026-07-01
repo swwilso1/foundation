@@ -240,9 +240,15 @@ mod tests {
             );
         }
 
-        assert!(delayed_handler.schedule_handler(&1, "a".to_string()).is_ok());
-        assert!(delayed_handler.schedule_handler(&2, "b".to_string()).is_ok());
-        assert!(delayed_handler.schedule_handler(&3, "c".to_string()).is_ok());
+        assert!(delayed_handler
+            .schedule_handler(&1, "a".to_string())
+            .is_ok());
+        assert!(delayed_handler
+            .schedule_handler(&2, "b".to_string())
+            .is_ok());
+        assert!(delayed_handler
+            .schedule_handler(&3, "c".to_string())
+            .is_ok());
 
         sleep(Duration::from_secs(1)).await;
 

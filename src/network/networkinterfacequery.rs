@@ -241,7 +241,10 @@ mod tests {
             v4_addr(Ipv4Addr::new(192, 168, 1, 1)),
             v4_addr(Ipv4Addr::new(8, 8, 8, 8)),
         ]);
-        assert_eq!(v4(interface.get_global_address().unwrap()), Ipv4Addr::new(8, 8, 8, 8));
+        assert_eq!(
+            v4(interface.get_global_address().unwrap()),
+            Ipv4Addr::new(8, 8, 8, 8)
+        );
     }
 
     #[test]

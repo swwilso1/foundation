@@ -186,7 +186,10 @@ mod tests {
             events[0].kind,
             EventKind::Create(notify::event::CreateKind::Any)
         );
-        assert_eq!(events[0].paths, vec![std::path::PathBuf::from("/some/path")]);
+        assert_eq!(
+            events[0].paths,
+            vec![std::path::PathBuf::from("/some/path")]
+        );
     }
 
     #[test]
@@ -241,9 +244,7 @@ mod tests {
         let tmp_file = temp_dir.join("filesystem_monitor_test.txt");
         std::fs::write(&tmp_file, "test").unwrap();
         sleep(Duration::from_secs(1));
-        assert!(
-            event_handler_fired.load(std::sync::atomic::Ordering::Relaxed)
-        );
+        assert!(event_handler_fired.load(std::sync::atomic::Ordering::Relaxed));
         std::fs::remove_file(tmp_file).unwrap();
         monitor.stop();
     }
@@ -340,6 +341,9 @@ mod tests {
 
         monitor.stop();
         std::fs::remove_dir_all(&dir).ok();
-        assert!(saw_event, "expected at least one event in non-recursive mode");
+        assert!(
+            saw_event,
+            "expected at least one event in non-recursive mode"
+        );
     }
 }

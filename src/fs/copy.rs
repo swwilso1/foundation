@@ -219,9 +219,10 @@ mod tests {
             last_percent_clone.store(percent as u64, Ordering::SeqCst);
         });
 
-        let meter = Arc::new(Mutex::new(
-            ProgressMeter::new_with_notifier_and_size(notifier, total as u64),
-        ));
+        let meter = Arc::new(Mutex::new(ProgressMeter::new_with_notifier_and_size(
+            notifier,
+            total as u64,
+        )));
 
         copy(src_file.path(), &dest_path, Some(meter.clone())).unwrap();
 

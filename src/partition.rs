@@ -150,8 +150,14 @@ mod tests {
     #[test]
     fn test_partition_table_try_from_i64_round_trip() {
         // The numeric discriminants used by `TryFrom<i64>`.
-        assert_eq!(PartitionTable::try_from(0_i64).unwrap(), PartitionTable::GPT);
-        assert_eq!(PartitionTable::try_from(1_i64).unwrap(), PartitionTable::DOS);
+        assert_eq!(
+            PartitionTable::try_from(0_i64).unwrap(),
+            PartitionTable::GPT
+        );
+        assert_eq!(
+            PartitionTable::try_from(1_i64).unwrap(),
+            PartitionTable::DOS
+        );
 
         // Out-of-range values on both ends should fail.
         assert!(PartitionTable::try_from(-1_i64).is_err());

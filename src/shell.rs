@@ -118,10 +118,7 @@ mod tests {
         // On non-Windows the command is invoked directly, so a bogus binary yields an Err.
         // On Windows the command runs via `cmd /C`, which succeeds while the inner command
         // fails, so only assert the error path off Windows.
-        let result = Shell::execute_command(
-            "this_command_should_not_exist_anywhere_12345",
-            vec![],
-        );
+        let result = Shell::execute_command("this_command_should_not_exist_anywhere_12345", vec![]);
         if cfg!(target_os = "windows") {
             // `cmd /C bogus` still spawns cmd successfully.
             assert!(result.is_ok());

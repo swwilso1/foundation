@@ -523,15 +523,17 @@ mod tests {
         let path = dir.path().join("dhcpcd_ipv6.conf");
 
         let mut interface = NetworkInterface::new_with_name("eth0");
-        interface.addresses.push(
-            InterfaceAddr::try_from("fc00::10/64").expect("valid ipv6 cidr"),
-        );
+        interface
+            .addresses
+            .push(InterfaceAddr::try_from("fc00::10/64").expect("valid ipv6 cidr"));
         interface
             .gateway_addresses
             .push(IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1)));
         interface
             .nameserver_addresses
-            .push(IpAddr::V6(Ipv6Addr::new(0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8888)));
+            .push(IpAddr::V6(Ipv6Addr::new(
+                0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8888,
+            )));
         let config = NetworkConfiguration::new(AddressMode::Static, interface, true, None, None);
         let mut config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
         config_map.insert("eth0".to_string(), config);

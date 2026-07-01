@@ -298,7 +298,10 @@ mod tests {
         let service = HostAPDService::new(path.clone());
         service.write_configuration(&config_map).unwrap();
 
-        assert!(!path.exists(), "client-mode config must not write a hostapd file");
+        assert!(
+            !path.exists(),
+            "client-mode config must not write a hostapd file"
+        );
     }
 
     #[test]
@@ -319,7 +322,10 @@ mod tests {
         let service = HostAPDService::new(path.clone());
         service.write_configuration(&config_map).unwrap();
 
-        assert!(!path.exists(), "disabled config must not write a hostapd file");
+        assert!(
+            !path.exists(),
+            "disabled config must not write a hostapd file"
+        );
     }
 
     #[test]

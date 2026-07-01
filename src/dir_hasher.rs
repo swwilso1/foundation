@@ -297,9 +297,8 @@ mod tests {
         // The per-file hashes are content hashes (independent of the absolute path), so they are
         // stable across platforms. Verify each against the standalone file-hash function.
         let middle_dir = start_dir.join("middle_dir");
-        let expect_file_hash = |path: &Path| -> String {
-            get_hash_for_file(path, Arc::new(|| false), None).unwrap()
-        };
+        let expect_file_hash =
+            |path: &Path| -> String { get_hash_for_file(path, Arc::new(|| false), None).unwrap() };
 
         let file1 = child_by_name(middle_kids, "file1.txt");
         assert_eq!(file1["type"], "file");
@@ -472,13 +471,7 @@ mod tests {
         let meter = Arc::new(Mutex::new(meter));
 
         let mut dir_hasher = DirHasher::new(&start_dir);
-        hash_directory(
-            &start_dir,
-            &mut dir_hasher,
-            Arc::new(|| false),
-            Some(meter),
-        )
-        .unwrap();
+        hash_directory(&start_dir, &mut dir_hasher, Arc::new(|| false), Some(meter)).unwrap();
 
         // Hashing the file should have driven the progress meter to notify.
         assert!(notified.load(Ordering::SeqCst));

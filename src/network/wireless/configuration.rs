@@ -263,10 +263,22 @@ mod tests {
 
     #[test]
     fn test_wireless_standard_from_str() {
-        assert_eq!("A".parse::<WirelessStandard>().unwrap(), WirelessStandard::A);
-        assert_eq!("B".parse::<WirelessStandard>().unwrap(), WirelessStandard::B);
-        assert_eq!("G".parse::<WirelessStandard>().unwrap(), WirelessStandard::G);
-        assert_eq!("N".parse::<WirelessStandard>().unwrap(), WirelessStandard::N);
+        assert_eq!(
+            "A".parse::<WirelessStandard>().unwrap(),
+            WirelessStandard::A
+        );
+        assert_eq!(
+            "B".parse::<WirelessStandard>().unwrap(),
+            WirelessStandard::B
+        );
+        assert_eq!(
+            "G".parse::<WirelessStandard>().unwrap(),
+            WirelessStandard::G
+        );
+        assert_eq!(
+            "N".parse::<WirelessStandard>().unwrap(),
+            WirelessStandard::N
+        );
     }
 
     #[test]
@@ -301,7 +313,10 @@ mod tests {
 
     #[test]
     fn test_wireless_mode_from_str() {
-        assert_eq!("client".parse::<WirelessMode>().unwrap(), WirelessMode::Client);
+        assert_eq!(
+            "client".parse::<WirelessMode>().unwrap(),
+            WirelessMode::Client
+        );
         assert_eq!(
             "access_point".parse::<WirelessMode>().unwrap(),
             WirelessMode::AccessPoint

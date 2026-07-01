@@ -120,9 +120,10 @@ mod tests {
         let notifier = Box::new(move |percent: u8| {
             last_percent_clone.store(percent as u64, Ordering::SeqCst);
         });
-        let meter = Arc::new(Mutex::new(
-            ProgressMeter::new_with_notifier_and_size(notifier, data.len() as u64),
-        ));
+        let meter = Arc::new(Mutex::new(ProgressMeter::new_with_notifier_and_size(
+            notifier,
+            data.len() as u64,
+        )));
 
         async_copy(src_file.path(), &dest_path, Arc::new(|| false), Some(meter))
             .await

@@ -365,9 +365,7 @@ impl<T> MultiQueue<T> {
                 }
 
                 assert!(!self.head.is_null(), "head is null");
-                unsafe {
-                    Some(&(*self.head).object)
-                }
+                unsafe { Some(&(*self.head).object) }
             }
             Err(_) => {
                 error!("Could not lock the MultiQueue core");
@@ -412,9 +410,7 @@ impl<T> MultiQueue<T> {
                 }
 
                 assert!(!self.head.is_null(), "head is null");
-                unsafe {
-                    Some(&mut (*self.head).object)
-                }
+                unsafe { Some(&mut (*self.head).object) }
             }
             Err(_) => {
                 error!("Could not lock the MultiQueue core");

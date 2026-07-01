@@ -136,7 +136,10 @@ mod tests {
             None,
             Some(IpAddr::V4(Ipv4Addr::new(255, 255, 255, 0))),
         );
-        assert_eq!(addr.get_in_cidr_notation(), Some("192.168.1.5/24".to_string()));
+        assert_eq!(
+            addr.get_in_cidr_notation(),
+            Some("192.168.1.5/24".to_string())
+        );
     }
 
     #[test]
@@ -150,10 +153,7 @@ mod tests {
         let addr = InterfaceAddr::try_from("10.0.0.1/8").unwrap();
         assert_eq!(addr.ip, IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)));
         assert_eq!(addr.broadcast, None);
-        assert_eq!(
-            addr.netmask,
-            Some(IpAddr::V4(Ipv4Addr::new(255, 0, 0, 0)))
-        );
+        assert_eq!(addr.netmask, Some(IpAddr::V4(Ipv4Addr::new(255, 0, 0, 0))));
     }
 
     #[test]

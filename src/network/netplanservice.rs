@@ -733,7 +733,10 @@ mod tests {
         let mut reread_map: HashMap<String, NetworkConfiguration> = HashMap::new();
         let result = netplan_service.load_configuration(&mut reread_map);
         assert!(result.is_ok());
-        assert_eq!(reread_map.get("wlan0").unwrap().interface.addresses.len(), 1);
+        assert_eq!(
+            reread_map.get("wlan0").unwrap().interface.addresses.len(),
+            1
+        );
 
         netplan_service.remove_config_file().unwrap();
     }
@@ -760,9 +763,13 @@ mod tests {
         netplan_service.write_configuration(&config_map).unwrap();
 
         let mut read_config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
-        netplan_service.load_configuration(&mut read_config_map).unwrap();
+        netplan_service
+            .load_configuration(&mut read_config_map)
+            .unwrap();
 
-        let loaded = read_config_map.get("wlan0").expect("wlan0 present in ethernets");
+        let loaded = read_config_map
+            .get("wlan0")
+            .expect("wlan0 present in ethernets");
         assert!(loaded.enabled);
         assert_eq!(loaded.address_mode, AddressMode::DHCP);
         // The wifi configuration is not round-tripped through the ethernets section.

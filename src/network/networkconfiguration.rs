@@ -200,13 +200,8 @@ mod tests {
     #[test]
     fn test_new() {
         let interface = NetworkInterface::new_with_name("eth0");
-        let config = NetworkConfiguration::new(
-            AddressMode::Static,
-            interface.clone(),
-            true,
-            None,
-            None,
-        );
+        let config =
+            NetworkConfiguration::new(AddressMode::Static, interface.clone(), true, None, None);
         assert_eq!(config.address_mode, AddressMode::Static);
         assert_eq!(config.interface, interface);
         assert!(config.enabled);
@@ -266,7 +261,10 @@ mod tests {
     #[test]
     fn test_address_mode_from_str() {
         assert_eq!("dhcp".parse::<AddressMode>().unwrap(), AddressMode::DHCP);
-        assert_eq!("static".parse::<AddressMode>().unwrap(), AddressMode::Static);
+        assert_eq!(
+            "static".parse::<AddressMode>().unwrap(),
+            AddressMode::Static
+        );
     }
 
     #[test]

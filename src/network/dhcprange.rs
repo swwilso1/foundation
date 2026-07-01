@@ -79,7 +79,10 @@ mod tests {
     #[test]
     fn test_try_from_valid_ipv6() {
         let range = DHCPRange::try_from("fc00::1,fc00::ff").unwrap();
-        assert_eq!(range.start, IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1)));
+        assert_eq!(
+            range.start,
+            IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1))
+        );
         assert_eq!(
             range.end,
             IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0xff))

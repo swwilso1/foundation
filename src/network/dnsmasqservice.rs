@@ -182,7 +182,10 @@ mod tests {
         let service = DNSMasqService::new(path.clone());
         service.write_configuration(&config_map).unwrap();
 
-        assert!(!path.exists(), "no file should be written for a non-AP config");
+        assert!(
+            !path.exists(),
+            "no file should be written for a non-AP config"
+        );
     }
 
     #[test]

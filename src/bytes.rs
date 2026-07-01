@@ -634,15 +634,9 @@ mod tests {
     #[test]
     fn test_normalize_byte_size_rounding() {
         // 1536 / 1024 == 1.5 exactly.
-        assert_eq!(
-            normalize_byte_size(1536, ByteMetricBase::Metric),
-            "1.50 Kb"
-        );
+        assert_eq!(normalize_byte_size(1536, ByteMetricBase::Metric), "1.50 Kb");
         // 1500 / 1024 == 1.46484375 -> rounds to two decimals.
-        assert_eq!(
-            normalize_byte_size(1500, ByteMetricBase::Metric),
-            "1.46 Kb"
-        );
+        assert_eq!(normalize_byte_size(1500, ByteMetricBase::Metric), "1.46 Kb");
         assert_eq!(
             normalize_byte_size(1500, ByteMetricBase::Decimal),
             "1.50 KB"

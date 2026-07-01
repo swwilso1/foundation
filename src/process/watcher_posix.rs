@@ -63,8 +63,7 @@ mod tests {
 
     #[test]
     fn test_mixed_live_and_dead() {
-        let dead =
-            watch_processes_for_termination(vec![std::process::id(), 2147483647]).unwrap();
+        let dead = watch_processes_for_termination(vec![std::process::id(), 2147483647]).unwrap();
         assert_eq!(dead, vec![2147483647]);
     }
 
