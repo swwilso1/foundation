@@ -1,12 +1,10 @@
 use crate::error::FoundationError;
 use crate::progressmeter::ProgressMeter;
-use nix::unistd::fsync;
 use std::io::{Read, Write};
-use std::os::fd::{AsRawFd, RawFd};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-const BLOCKSIZE: libc::size_t = 8388608;
+const BLOCKSIZE: usize = 8388608;
 
 /// Synchronously copy a file from one location to another.
 ///
@@ -40,10 +38,6 @@ pub fn copy(
         .create(true)
         .open(dest)?;
 
-    // Get the destination file descriptor. We use this to call fsync to make sure
-    // the data is written to disk.
-    let dest_fd = dest_file.as_raw_fd();
-
     let mut src_file = std::fs::File::open(src)?;
 
     while src_bytes > 0 {
@@ -66,8 +60,9 @@ pub fn copy(
         src_bytes -= bytes_read as u64;
     }
 
-    // Make sure to sync the writes to the destination.
-    if let Err(e) = fsync(dest_fd) {
+    // Make sure the writes are flushed to disk. sync_all maps to fsync on Unix
+    // and FlushFileBuffers on Windows, so it is portable across platforms.
+    if let Err(e) = dest_file.sync_all() {
         return Err(FoundationError::SyncError(format!(
             "Failed to sync data: {}",
             e
@@ -77,9 +72,11 @@ pub fn copy(
     Ok(())
 }
 
-pub fn sync(fd: RawFd) -> Result<(), FoundationError> {
-    // Make sure to sync the writes to the destination.
-    if let Err(e) = fsync(fd) {
+/// Flush a raw file descriptor to disk. Unix only — Windows callers use
+/// `File::sync_all` directly.
+#[cfg(unix)]
+pub fn sync(fd: std::os::fd::RawFd) -> Result<(), FoundationError> {
+    if let Err(e) = nix::unistd::fsync(fd) {
         return Err(FoundationError::SyncError(format!(
             "Failed to sync data: {}",
             e
@@ -230,8 +227,10 @@ mod tests {
         assert_eq!(last_percent.load(Ordering::SeqCst), 100);
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_sync_succeeds_on_valid_fd() {
+        use std::os::fd::AsRawFd;
         let mut file = NamedTempFile::new().unwrap();
         write!(file, "data to sync").unwrap();
         file.flush().unwrap();
@@ -240,6 +239,7 @@ mod tests {
         sync(fd).unwrap();
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_sync_fails_on_invalid_fd() {
         // -1 is never a valid file descriptor.

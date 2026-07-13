@@ -19,10 +19,15 @@ pub mod hash;
 pub mod interrupter;
 pub mod keyvalueconfigfile;
 pub mod multiqueue;
+// Networking, process supervision, and their watcher build on Unix system APIs
+// (nix, raw fds, netlink/nl80211). They are not available on Windows.
+#[cfg(unix)]
 pub mod network;
 pub mod partition;
 pub mod platformid;
+#[cfg(unix)]
 pub mod process;
+#[cfg(unix)]
 pub mod process_watcher;
 pub mod progressmeter;
 pub mod protected;
