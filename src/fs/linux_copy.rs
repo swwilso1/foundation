@@ -114,6 +114,17 @@ where
                 )));
             }
 
+            if bytes_sent == 0 {
+                // sendfile returns 0 at end-of-file. The loop condition guarantees the byte
+                // counter (taken from the file metadata before the loop) still expects more
+                // data, so the source file must have shrunk since the metadata snapshot.
+                // Retrying would return 0 forever and spin this loop hot; fail instead.
+                return Err(FoundationError::CopyFailed(format!(
+                    "Source file ended {} bytes short of its reported size",
+                    bytes_still_to_transfer
+                )));
+            }
+
             bytes_still_to_transfer -= bytes_sent as libc::size_t;
 
             if let Some(meter) = &meter {

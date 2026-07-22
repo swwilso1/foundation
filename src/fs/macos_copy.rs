@@ -55,8 +55,16 @@ where
     while src_bytes > 0 {
         let mut buffer = vec![0u8; BLOCKSIZE];
         let bytes_read = src_file.read(&mut buffer).await?;
-        if bytes_read == 0 && src_bytes > 0 {
-            continue;
+        if bytes_read == 0 {
+            // A zero-byte read means end-of-file. The loop condition guarantees the byte
+            // counter (taken from the file metadata before the loop) still expects more
+            // data, so the file must have shrunk since the metadata snapshot. Retrying the
+            // read would return end-of-file forever and spin this loop hot; fail instead.
+            return Err(FoundationError::CopyFailed(format!(
+                "Source file {} ended {} bytes short of its reported size",
+                src.display(),
+                src_bytes
+            )));
         }
 
         dest_file.write_all(&buffer[..bytes_read]).await?;
