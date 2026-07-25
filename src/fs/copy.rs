@@ -68,9 +68,8 @@ pub fn copy(
         src_bytes -= bytes_read as u64;
     }
 
-    // Make sure the writes are flushed to disk. sync_all maps to fsync on Unix
-    // and FlushFileBuffers on Windows, so it is portable across platforms.
-    if let Err(e) = dest_file.sync_all() {
+    // Make sure the writes are flushed to disk.
+    if let Err(e) = sync_file(&dest_file) {
         return Err(FoundationError::SyncError(format!(
             "Failed to sync data: {}",
             e
@@ -78,6 +77,47 @@ pub fn copy(
     }
 
     Ok(())
+}
+
+/// Flush a file's contents to disk.
+///
+/// On Apple platforms `File::sync_all` is implemented as `fcntl(F_FULLFSYNC)`, which asks
+/// the drive to flush its own write cache. Network filesystems (SMB in particular) do not
+/// implement that fcntl and fail it with ENOTSUP, which would otherwise make every copy
+/// onto a mounted share fail. Fall back to a plain `fsync(2)` in that case: it only
+/// guarantees the data reached the server rather than the platter, but it is the strongest
+/// flush those filesystems offer.
+#[cfg(target_vendor = "apple")]
+fn sync_file(file: &std::fs::File) -> std::io::Result<()> {
+    use std::os::fd::AsRawFd;
+
+    match file.sync_all() {
+        Err(e)
+            if matches!(
+                e.raw_os_error(),
+                Some(libc::ENOTSUP) | Some(libc::EOPNOTSUPP) | Some(libc::EINVAL)
+            ) =>
+        {
+            let fd = file.as_raw_fd();
+            loop {
+                if unsafe { libc::fsync(fd) } == 0 {
+                    return Ok(());
+                }
+                let err = std::io::Error::last_os_error();
+                if err.kind() != std::io::ErrorKind::Interrupted {
+                    return Err(err);
+                }
+            }
+        }
+        other => other,
+    }
+}
+
+/// Flush a file's contents to disk. Everywhere but Apple platforms `sync_all` already maps
+/// to `fsync(2)` (or `FlushFileBuffers` on Windows), so no fallback is needed.
+#[cfg(not(target_vendor = "apple"))]
+fn sync_file(file: &std::fs::File) -> std::io::Result<()> {
+    file.sync_all()
 }
 
 /// Flush a raw file descriptor to disk. Unix only — Windows callers use
@@ -256,5 +296,15 @@ mod tests {
             FoundationError::SyncError(_) => {}
             other => panic!("expected SyncError, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_sync_file_on_local_file() {
+        // The ENOTSUP fallback path only triggers on filesystems that reject
+        // F_FULLFSYNC, which a local temp file will not do; this just covers the
+        // ordinary success path.
+        let mut file = NamedTempFile::new().unwrap();
+        write!(file, "sync me").unwrap();
+        sync_file(file.as_file()).unwrap();
     }
 }
