@@ -67,19 +67,22 @@ impl NetworkService for DNSMasqService {
             if config.enabled && config.wifi_configuration.is_some() && config.dhcp_range.is_some()
             {
                 let key_value_config = KeyValueConfigFile::new(self.filename.clone());
-                let mut config_map: HashMap<String, String> = HashMap::new();
-                config_map.insert("interface".to_string(), name.clone());
-                if let Some(dhcp_range) = &config.dhcp_range {
-                    config_map.insert(
-                        "dhcp-range".to_string(),
-                        format!("{},{},12h", dhcp_range.start, dhcp_range.end),
-                    );
-                }
-                config_map.insert("port".to_string(), "0".to_string());
-                config_map.insert("bogus-priv".to_string(), String::new());
-                config_map.insert("dnssec".to_string(), String::new());
 
-                key_value_config.save_configuration(&config_map)?;
+                // Write the entries in a fixed order.  The flag options (bogus-priv, dnssec) take
+                // no argument, so they are written as bare keys rather than "key=".
+                let mut entries: Vec<(&str, Option<String>)> =
+                    vec![("interface", Some(name.clone()))];
+                if let Some(dhcp_range) = &config.dhcp_range {
+                    entries.push((
+                        "dhcp-range",
+                        Some(format!("{},{},12h", dhcp_range.start, dhcp_range.end)),
+                    ));
+                }
+                entries.push(("port", Some("0".to_string())));
+                entries.push(("bogus-priv", None));
+                entries.push(("dnssec", None));
+
+                key_value_config.save_ordered_configuration(&entries)?;
             }
         }
 
@@ -156,6 +159,41 @@ mod tests {
         );
 
         dnsmasq_service.remove_config_file().unwrap();
+    }
+
+    #[test]
+    fn test_write_configuration_file_contents() {
+        // dnsmasq rejects "key=" for options that take no argument, so the flags must be bare
+        // keys, and the entries must be written in a stable order.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("dnsmasq_contents.conf");
+
+        let interface = NetworkInterface::new_with_name("wlan0");
+        let config = NetworkConfiguration::new(
+            AddressMode::DHCP,
+            interface,
+            true,
+            Some(WirelessConfiguration::default()),
+            Some(DHCPRange::new(
+                "192.168.4.10".parse().unwrap(),
+                "192.168.4.20".parse().unwrap(),
+            )),
+        );
+        let mut config_map: HashMap<String, NetworkConfiguration> = HashMap::new();
+        config_map.insert("wlan0".to_string(), config);
+
+        let service = DNSMasqService::new(path.clone());
+        service.write_configuration(&config_map).unwrap();
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            contents,
+            "interface=wlan0\n\
+             dhcp-range=192.168.4.10,192.168.4.20,12h\n\
+             port=0\n\
+             bogus-priv\n\
+             dnssec\n"
+        );
     }
 
     #[test]

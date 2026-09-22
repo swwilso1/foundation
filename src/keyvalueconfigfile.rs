@@ -95,6 +95,9 @@ impl KeyValueConfigFile {
 
     /// Save the configuration to the file.
     ///
+    /// Keys are written in sorted order so that the file contents are deterministic.  Use
+    /// `save_ordered_configuration` when the file must be written in a specific order.
+    ///
     /// # Arguments
     ///
     /// * `configuration` - The configuration to save to the file.
@@ -107,6 +110,29 @@ impl KeyValueConfigFile {
         &self,
         configuration: &HashMap<String, String>,
     ) -> Result<(), FoundationError> {
+        let mut entries: Vec<(&str, Option<&str>)> = configuration
+            .iter()
+            .map(|(key, value)| (key.as_str(), Some(value.as_str())))
+            .collect();
+        entries.sort_by(|a, b| a.0.cmp(b.0));
+        self.save_ordered_configuration(&entries)
+    }
+
+    /// Save the configuration entries to the file in the order given.
+    ///
+    /// # Arguments
+    ///
+    /// * `entries` - The key value pairs to save.  An entry with a `Some` value is written as
+    ///   `key=value`.  An entry with a `None` value is written as a bare `key` line (a flag).
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing `()` if the configuration was successfully saved to the file, otherwise
+    /// a `FoundationError` is returned.
+    pub fn save_ordered_configuration<K: AsRef<str>, V: AsRef<str>>(
+        &self,
+        entries: &[(K, Option<V>)],
+    ) -> Result<(), FoundationError> {
         match OpenOptions::new()
             .write(true)
             .create(true)
@@ -114,8 +140,11 @@ impl KeyValueConfigFile {
             .open(&self.filename)
         {
             Ok(mut file) => {
-                for (key, value) in configuration {
-                    writeln!(file, "{}={}", key, value)?;
+                for (key, value) in entries {
+                    match value {
+                        Some(value) => writeln!(file, "{}={}", key.as_ref(), value.as_ref())?,
+                        None => writeln!(file, "{}", key.as_ref())?,
+                    }
                 }
                 Ok(())
             }
@@ -271,6 +300,38 @@ mod tests {
         // The empty-valued key survives a save -> load round trip.
         let loaded = file.load_configuration().unwrap();
         assert_eq!(loaded, configuration);
+    }
+
+    #[test]
+    fn test_save_writes_keys_in_sorted_order() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.txt");
+        let file = KeyValueConfigFile::new(path.clone());
+        let mut configuration = HashMap::new();
+        configuration.insert("gamma".to_string(), "3".to_string());
+        configuration.insert("alpha".to_string(), "1".to_string());
+        configuration.insert("beta".to_string(), "2".to_string());
+
+        file.save_configuration(&configuration).unwrap();
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(contents, "alpha=1\nbeta=2\ngamma=3\n");
+    }
+
+    #[test]
+    fn test_save_ordered_preserves_order_and_writes_bare_flags() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.txt");
+        let file = KeyValueConfigFile::new(path.clone());
+        let entries = [
+            ("zeta", Some("last-alphabetically")),
+            ("flag", None),
+            ("alpha", Some("")),
+        ];
+
+        file.save_ordered_configuration(&entries).unwrap();
+        let contents = std::fs::read_to_string(&path).unwrap();
+        // Order is preserved, None is a bare key, and an empty Some value keeps its "=".
+        assert_eq!(contents, "zeta=last-alphabetically\nflag\nalpha=\n");
     }
 
     #[test]
