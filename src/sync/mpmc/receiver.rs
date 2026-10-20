@@ -6,6 +6,7 @@ use crate::multiqueue::MultiQueue;
 use crate::sync::mpmc::channel::{Channel, WhichWaker};
 use log::error;
 use std::future::poll_fn;
+use std::mem::ManuallyDrop;
 use std::sync::{Arc, Mutex};
 use std::task::Poll;
 use uuid::Uuid;
@@ -19,8 +20,10 @@ pub struct Receiver<T: Clone> {
     id: Uuid,
 
     // A fork of the queue in the channel. This fork allows the receiver to read
-    // messages independently of any other fork of the queue.
-    queue: MultiQueue<T>,
+    // messages independently of any other fork of the queue. The receiver drops it
+    // itself, before it wakes the senders, so that the space it held is free when
+    // they look.
+    queue: ManuallyDrop<MultiQueue<T>>,
 }
 
 impl<T: Clone> Receiver<T> {
@@ -49,7 +52,7 @@ impl<T: Clone> Receiver<T> {
         Receiver {
             channel,
             id: Uuid::new_v4(),
-            queue,
+            queue: ManuallyDrop::new(queue),
         }
     }
 
@@ -138,10 +141,32 @@ impl<T: Clone> Receiver<T> {
     }
 }
 
+impl<T: Clone> Drop for Receiver<T> {
+    fn drop(&mut self) {
+        // Dropping the fork releases the messages it had not read. In a bounded channel a sender
+        // waits while the slowest receiver holds the channel full, and only a wake tells it that
+        // the space is free, so wake the senders once the fork is gone.
+        unsafe {
+            ManuallyDrop::drop(&mut self.queue);
+        }
+        match self.channel.lock() {
+            Ok(mut channel) => {
+                channel.remove_waker(&self.id.to_string(), WhichWaker::Receiver);
+                channel.wake(WhichWaker::Sender);
+            }
+            Err(_) => {
+                error!("Unable to lock channel to wake senders");
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sync::mpmc::bounded::channel;
     use crate::sync::mpmc::unbounded::unbounded_channel;
+    use std::time::Duration;
 
     /// Poison the mutex guarding a channel so that subsequent lock attempts fail. This drives the
     /// lock-error branches in the receiver. Poisoning happens on the current thread by panicking
@@ -207,5 +232,59 @@ mod tests {
         let (sender, receiver) = unbounded_channel::<i32>();
         poison_channel(&receiver.channel);
         let _receiver2 = sender.subscribe();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_last_sender_drop_wakes_a_waiting_receiver() {
+        // A receiver already waiting for a message returns None once the last sender leaves.
+        let (sender, mut receiver) = channel::<i32>(4);
+        let waiter = tokio::spawn(async move { receiver.recv().await });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        drop(sender);
+        let received = tokio::time::timeout(Duration::from_secs(2), waiter)
+            .await
+            .expect("the receiver still waits after the last sender left");
+        assert_eq!(received.unwrap(), None);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_other_senders_keep_a_waiting_receiver_open() {
+        // While one sender remains, a waiting receiver keeps waiting, and gets that sender's message.
+        let (sender, mut receiver) = channel::<i32>(4);
+        let other = sender.clone();
+        let waiter = tokio::spawn(async move { receiver.recv().await });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        drop(sender);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(!waiter.is_finished());
+        other.send(7).await.unwrap();
+        let received = tokio::time::timeout(Duration::from_secs(2), waiter).await.unwrap();
+        assert_eq!(received.unwrap(), Some(7));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_receiver_drop_wakes_a_waiting_sender() {
+        // A bounded channel stays full while one receiver has not read, so a sender waits. Dropping
+        // that receiver frees the space and lets the send finish.
+        let (sender, mut reader) = channel::<i32>(1);
+        let lagging = sender.subscribe();
+        sender.send(1).await.unwrap();
+        assert_eq!(reader.recv().await, Some(1));
+
+        let blocked = tokio::spawn(async move {
+            sender.send(2).await.unwrap();
+            sender
+        });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(!blocked.is_finished());
+
+        drop(lagging);
+        let sender = tokio::time::timeout(Duration::from_secs(2), blocked)
+            .await
+            .expect("the sender still waits after the full receiver left")
+            .unwrap();
+        assert_eq!(reader.recv().await, Some(2));
+        drop(sender);
+        assert_eq!(reader.recv().await, None);
     }
 }

@@ -640,6 +640,17 @@ impl<T> Drop for MultiQueue<T> {
                 // deletion. We are just keeping the reference counting that handles
                 // the blocks up-to-date.
                 core.reference_count -= 1;
+
+                // pop_all leaves the fork at the end of the queue, where it counts among the
+                // forks that have read everything. A fork that is gone must leave that count too,
+                // or the queue goes on counting a reader that will never read, and shared_size
+                // reports blocks that no fork still needs.
+                if self.at_end_of_queue {
+                    core.count_at_end_of_queue -= 1;
+                }
+
+                // Free the blocks that this fork was the last to need.
+                core.update();
             }
             Err(_) => {
                 error!("Could not lock the MultiQueue core");
@@ -842,6 +853,43 @@ mod tests {
         assert_eq!(queue.size(), 1);
         queue.pop_front();
         assert_eq!(queue.size(), 0);
+    }
+
+    #[test]
+    fn test_dropping_a_fork_releases_what_it_had_not_read() {
+        // A fork that has not read a block holds it in the shared count. Once that fork is
+        // dropped, the blocks every remaining fork has read stop counting.
+        let mut queue = MultiQueue::new();
+        let mut reader = queue.fork().unwrap();
+        let lagging = queue.fork().unwrap();
+        queue.push_back(1).unwrap();
+        queue.pop_front();
+        reader.pop_front();
+        assert_eq!(queue.shared_size(), 1);
+
+        drop(lagging);
+        assert_eq!(queue.shared_size(), 0);
+        assert_eq!(reader.shared_size(), 0);
+
+        // The remaining forks go on sharing new blocks.
+        queue.push_back(2).unwrap();
+        assert_eq!(reader.size(), 1);
+        assert_eq!(reader.front(), Some(&2));
+    }
+
+    #[test]
+    fn test_dropping_a_fork_at_the_end_of_the_queue() {
+        // A fork that has read everything leaves the count of forks at the end when it is dropped.
+        let mut queue = MultiQueue::new();
+        let mut done = queue.fork().unwrap();
+        queue.push_back(1).unwrap();
+        queue.pop_front();
+        done.pop_front();
+        assert_eq!(queue.shared_size(), 0);
+        drop(done);
+        assert_eq!(queue.shared_size(), 0);
+        queue.push_back(2).unwrap();
+        assert_eq!(queue.shared_size(), 1);
     }
 
     #[test]

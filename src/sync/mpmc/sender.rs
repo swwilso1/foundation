@@ -157,7 +157,13 @@ impl<T: Clone> Drop for Sender<T> {
     fn drop(&mut self) {
         match self.channel.lock() {
             Ok(mut channel) => {
+                channel.remove_waker(&self.id.to_string(), WhichWaker::Sender);
                 channel.decrement_senders();
+                // A receiver that waits for a message finds out that the channel has closed only
+                // when something wakes it, so wake the receivers when the last sender leaves.
+                if channel.live_senders() == 0 {
+                    channel.wake(WhichWaker::Receiver);
+                }
             }
             Err(_) => {
                 error!("Unable to decrement channel senders");
