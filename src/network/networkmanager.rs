@@ -17,6 +17,8 @@ cfg_if! {
         use log::{debug, error};
 
         const NETPLAN_DIR: &str = "/etc/netplan";
+        // The netplan file that this manager writes. Its name sorts after the system's own
+        // files, so its definitions take precedence when netplan merges them.
         const NETPLAN_CONF: &str = "/etc/netplan/99-network-manager-config.yaml";
         const NETPLAN_COMMAND: &str = "/usr/sbin/netplan";
         const DHCPCD_CONF: &str = "/etc/dhcpcd.conf";
@@ -32,6 +34,13 @@ cfg_if! {
 pub struct NetworkManager {
     /// A map of network configurations by name.
     configurations: HashMap<String, NetworkConfiguration>,
+
+    /// The configurations as the system's other netplan files give them, by name.
+    /// `save_settings_to_system` writes only the differences from these.
+    netplan_base: HashMap<String, NetworkConfiguration>,
+
+    /// The netplan id of each interface in the system's other netplan files, by interface name.
+    netplan_ids: HashMap<String, String>,
 }
 
 impl Default for NetworkManager {
@@ -45,6 +54,8 @@ impl NetworkManager {
     pub fn new() -> Self {
         NetworkManager {
             configurations: HashMap::new(),
+            netplan_base: HashMap::new(),
+            netplan_ids: HashMap::new(),
         }
     }
 
@@ -190,10 +201,15 @@ impl NetworkManager {
     /// Remove all the network configurations from the manager.
     pub fn clear(&mut self) {
         self.configurations.clear();
+        self.netplan_base.clear();
+        self.netplan_ids.clear();
     }
 
     /// Load network settings from the system configuration into the manager.
     pub fn load_settings_from_system(&mut self) {
+        self.netplan_base.clear();
+        self.netplan_ids.clear();
+
         // Load network interfaces currently running on the system.
         let interfaces = NetworkInterface::load();
 
@@ -211,7 +227,8 @@ impl NetworkManager {
             if #[cfg(target_os = "linux")] {
                 let platform_id = PlatformId::new();
                 if platform_id.vendor == "Ubuntu" &&
-                    platform_id.processor_architecture == ProcessorArchitecture::X86_64 {
+                    (platform_id.processor_architecture == ProcessorArchitecture::X86_64 ||
+                        platform_id.processor_architecture == ProcessorArchitecture::ARM64) {
                     // We are running on Ubuntu 64-bit, assume we have access to the Netplan service.
 
                     // Get the netplan .yaml files.
@@ -228,11 +245,28 @@ impl NetworkManager {
 
                     netplan_yaml_files.sort();
 
-                    for yaml_path in netplan_yaml_files {
+                    // Load the system's own files first, and keep what they give as the base
+                    // that save_settings_to_system compares with. Then load this manager's file.
+                    let own_file = std::path::PathBuf::from(NETPLAN_CONF);
+                    let mut ids = HashMap::new();
+                    for yaml_path in netplan_yaml_files.iter().filter(|path| **path != own_file) {
                         debug!("Loading {:?}", yaml_path);
                         let mut netplan_service = NetplanService::new(yaml_path.clone());
+                        netplan_service.set_interface_ids(ids);
                         if let Err(e) = netplan_service.load_configuration(&mut self.configurations) {
                             error!("Failed to load Netplan configuration from {}: {}", yaml_path.to_string_lossy(), e);
+                        }
+                        ids = netplan_service.interface_ids().clone();
+                    }
+                    self.netplan_base = self.configurations.clone();
+                    self.netplan_ids = ids.clone();
+
+                    if netplan_yaml_files.contains(&own_file) {
+                        debug!("Loading {:?}", own_file);
+                        let mut netplan_service = NetplanService::new(own_file.clone());
+                        netplan_service.set_interface_ids(ids);
+                        if let Err(e) = netplan_service.load_configuration(&mut self.configurations) {
+                            error!("Failed to load Netplan configuration from {}: {}", own_file.to_string_lossy(), e);
                         }
                     }
                 } else if platform_id.name == "Debian" &&
@@ -263,6 +297,15 @@ impl NetworkManager {
                         error!("Failed to load HostAPD configuration from {}: {}", hostapd_config_file.to_string_lossy(), e);
                     }
                 }
+
+                // Netplan does not hold the Wi-Fi mode or the DHCP range, so the base takes them
+                // from the loaded configurations.
+                for (name, base) in self.netplan_base.iter_mut() {
+                    if let Some(configuration) = self.configurations.get(name) {
+                        base.wifi_configuration = configuration.wifi_configuration.clone();
+                        base.dhcp_range = configuration.dhcp_range.clone();
+                    }
+                }
             }
         }
     }
@@ -271,6 +314,13 @@ impl NetworkManager {
     ///
     /// This method will write the network configurations to the system configuration files and
     /// restart the necessary services to apply the changes.
+    ///
+    /// On Ubuntu it writes netplan settings to its own file, 99-network-manager-config.yaml,
+    /// and leaves the system's other netplan files as they are. The file holds only the
+    /// interfaces whose settings differ from what the other files give, under the ids that those
+    /// files use, and it turns a disabled interface off with `activation-mode: off`. Netplan
+    /// appends lists from later files, so the file cannot remove an address, nameserver or
+    /// route that another file gives an interface.
     pub fn save_settings_to_system(&self) {
         cfg_if! {
             if #[cfg(target_os = "linux")] {
@@ -296,34 +346,12 @@ impl NetworkManager {
                     (platform_id.processor_architecture == ProcessorArchitecture::X86_64 ||
                         platform_id.processor_architecture == ProcessorArchitecture::ARM64) {
 
-                    // Find the .yaml netplan files.
-                    let netplan_yaml_files = match std::fs::read_dir(NETPLAN_DIR) {
-                        Ok(entries) => {
-                            entries.into_iter()
-                                .filter(|entry| entry.is_ok())
-                                .filter(|entry| entry.as_ref().unwrap().path().extension().unwrap_or_default() == "yaml")
-                                .filter(|entry| entry.as_ref().unwrap().path().exists())
-                                .map(|entry| entry.unwrap().path())
-                                .collect::<Vec<_>>()
-                        },
-                        Err(e) => {
-                            error!("Failed to read directory {}: {}", NETPLAN_DIR, e);
-                            vec![]
-                        },
-                    };
-
-                    for yaml_path in netplan_yaml_files {
-                        let new_yaml_path = yaml_path.with_extension("yaml.orig");
-                        if let Err(e) = std::fs::rename(&yaml_path, &new_yaml_path) {
-                            error!("Failed to rename {} to {}: {}", yaml_path.to_string_lossy(), new_yaml_path.to_string_lossy(), e);
-                            continue;
-                        }
-                    }
-
-                    let netplan_config_file = std::path::PathBuf::from(NETPLAN_CONF);
-                    let netplan_service = NetplanService::new(netplan_config_file.clone());
-                    if let Err(e) = netplan_service.write_configuration(&self.configurations) {
-                        error!("Failed to write Netplan configuration to {}: {}", netplan_config_file.to_string_lossy(), e);
+                    // Write only the settings that differ from the system's own netplan files,
+                    // and leave those files as they are.
+                    let mut netplan_service = NetplanService::new(std::path::PathBuf::from(NETPLAN_CONF));
+                    netplan_service.set_interface_ids(self.netplan_ids.clone());
+                    if let Err(e) = netplan_service.write_changes(&self.configurations, &self.netplan_base) {
+                        error!("Failed to write Netplan configuration to {}: {}", NETPLAN_CONF, e);
                     }
 
                     Shell::execute(NETPLAN_COMMAND, vec!["apply".to_string()]);
