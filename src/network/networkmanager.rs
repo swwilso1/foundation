@@ -4,6 +4,38 @@
 use crate::network::networkconfiguration::NetworkConfiguration;
 use crate::network::networkinterface::NetworkInterface;
 use std::collections::HashMap;
+use std::path::Path;
+
+/// The kernel's directory of network interfaces.
+pub const SYS_CLASS_NET: &str = "/sys/class/net";
+
+/// The ARP hardware type the kernel reports for an Ethernet interface.
+const ARPHRD_ETHER: &str = "1";
+
+/// Decide whether the kernel reports `name` as a wired Ethernet port.
+///
+/// A port has a device behind it, which leaves out the loopback, bridge and other virtual
+/// interfaces. Its type is Ethernet, which leaves out a simulated radio's monitor interface. It
+/// has no `wireless` directory or `phy80211` link, which leaves out a Wi-Fi card, since the kernel
+/// reports a Wi-Fi card as type Ethernet as well.
+///
+/// # Arguments
+///
+/// * `sys_class_net` - The kernel's directory of network interfaces, normally `SYS_CLASS_NET`.
+/// * `name` - The interface name.
+///
+/// # Returns
+///
+/// `true` when the machine has a wired Ethernet port called `name`.
+pub fn is_ethernet_port(sys_class_net: &Path, name: &str) -> bool {
+    let directory = sys_class_net.join(name);
+    directory.join("device").exists()
+        && std::fs::read_to_string(directory.join("type"))
+            .map(|text| text.trim() == ARPHRD_ETHER)
+            .unwrap_or(false)
+        && !directory.join("wireless").exists()
+        && !directory.join("phy80211").exists()
+}
 
 cfg_if! {
     if #[cfg(target_os = "linux")] {
@@ -187,6 +219,45 @@ impl NetworkManager {
             .map(|c| c.get_name())
     }
 
+    /// Return the name of the machine's Ethernet port.
+    ///
+    /// The manager holds a configuration for every interface the machine has and every interface
+    /// a netplan file names, and a netplan file can name a port that the machine no longer has.
+    /// This method therefore keeps the configurations that the kernel reports as wired Ethernet
+    /// ports, and unlike `get_primary_ethernet_configuration_name` it also finds a port that is
+    /// turned off or has no address.
+    ///
+    /// # Returns
+    ///
+    /// The port with an IPv4 address, or the first port by name when none has one, or None when
+    /// the machine has no Ethernet port.
+    pub fn get_ethernet_port_name(&self) -> Option<String> {
+        self.get_ethernet_port_name_in(Path::new(SYS_CLASS_NET))
+    }
+
+    /// Return the name of the Ethernet port as `get_ethernet_port_name` does, with the kernel's
+    /// directory of network interfaces at `sys_class_net`.
+    ///
+    /// # Arguments
+    ///
+    /// * `sys_class_net` - The kernel's directory of network interfaces.
+    pub fn get_ethernet_port_name_in(&self, sys_class_net: &Path) -> Option<String> {
+        let mut ports: Vec<String> = self
+            .get_ethernet_configuration_names()
+            .into_iter()
+            .filter(|name| is_ethernet_port(sys_class_net, name))
+            .collect();
+        ports.sort();
+
+        let with_address = ports.iter().find(|name| {
+            self.configurations
+                .get(*name)
+                .is_some_and(|config| config.interface.has_ipv4_address())
+        });
+
+        with_address.or(ports.first()).cloned()
+    }
+
     /// Add a network configuration with the specified name.
     ///
     /// # Arguments
@@ -206,7 +277,11 @@ impl NetworkManager {
     }
 
     /// Load network settings from the system configuration into the manager.
+    ///
+    /// The manager starts again from an empty set of configurations, so a configuration for an
+    /// interface that the machine and its files no longer have does not stay behind.
     pub fn load_settings_from_system(&mut self) {
+        self.configurations.clear();
         self.netplan_base.clear();
         self.netplan_ids.clear();
 
@@ -468,5 +543,137 @@ mod tests {
         assert_eq!(manager.get_number_of_wireless_configurations(), 1);
         assert_eq!(manager.get_ethernet_configuration_names(), vec!["eth0"]);
         assert_eq!(manager.get_wireless_configuration_names(), vec!["wlan0"]);
+    }
+
+    /// A temporary directory laid out as /sys/class/net.
+    struct FakeSysClassNet {
+        root: std::path::PathBuf,
+    }
+
+    impl FakeSysClassNet {
+        fn new() -> FakeSysClassNet {
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            static NEXT: AtomicUsize = AtomicUsize::new(0);
+            let root = std::env::temp_dir().join(format!(
+                "foundation-sys-class-net-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            let _ = std::fs::remove_dir_all(&root);
+            std::fs::create_dir_all(&root).unwrap();
+            FakeSysClassNet { root }
+        }
+
+        /// Add an interface with an ARP type, with or without a device behind it, and with or
+        /// without the `wireless` directory a Wi-Fi card has.
+        fn add(&self, name: &str, arp_type: &str, device: bool, wireless: bool) {
+            let directory = self.root.join(name);
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::write(directory.join("type"), format!("{}\n", arp_type)).unwrap();
+            if device {
+                std::fs::create_dir_all(directory.join("device")).unwrap();
+            }
+            if wireless {
+                std::fs::create_dir_all(directory.join("wireless")).unwrap();
+            }
+        }
+    }
+
+    impl Drop for FakeSysClassNet {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    /// A duplicator just after an install that renamed its port: the port carries its new
+    /// name, a netplan file still names the old one, and the machine also has a Wi-Fi card, a
+    /// simulated radio's monitor interface and the loopback.
+    fn renamed_port() -> (FakeSysClassNet, NetworkManager) {
+        let sys = FakeSysClassNet::new();
+        sys.add("lo", "772", false, false);
+        sys.add("bseth0", "1", true, false);
+        sys.add("bswifi0", "1", true, true);
+        sys.add("hwsim0", "803", false, false);
+
+        let mut manager = NetworkManager::new();
+        for name in ["lo", "bseth0", "bswifi0", "hwsim0", "enp0s1", "wlan0"] {
+            manager.add_configuration(NetworkConfiguration::new_with_name(name));
+        }
+        (sys, manager)
+    }
+
+    #[test]
+    fn test_only_a_wired_port_the_machine_has_is_an_ethernet_port() {
+        let (sys, _) = renamed_port();
+        assert!(is_ethernet_port(&sys.root, "bseth0"));
+        assert!(!is_ethernet_port(&sys.root, "lo"));
+        assert!(!is_ethernet_port(&sys.root, "bswifi0"));
+        assert!(!is_ethernet_port(&sys.root, "hwsim0"));
+        assert!(!is_ethernet_port(&sys.root, "enp0s1"));
+    }
+
+    #[test]
+    fn test_ethernet_port_is_the_one_the_machine_has() {
+        let (sys, manager) = renamed_port();
+        assert_eq!(
+            manager.get_ethernet_port_name_in(&sys.root),
+            Some("bseth0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_ethernet_port_does_not_depend_on_map_order() {
+        // Each NetworkManager gets its own HashMap seed, so the order of its configurations
+        // changes from one manager to the next.
+        for _ in 0..20 {
+            let (sys, manager) = renamed_port();
+            assert_eq!(
+                manager.get_ethernet_port_name_in(&sys.root),
+                Some("bseth0".to_string())
+            );
+        }
+    }
+
+    #[test]
+    fn test_ethernet_port_is_found_when_turned_off() {
+        let (sys, mut manager) = renamed_port();
+        manager.get_configuration_mut("bseth0").unwrap().enabled = false;
+        assert_eq!(manager.get_primary_ethernet_configuration_name(), None);
+        assert_eq!(
+            manager.get_ethernet_port_name_in(&sys.root),
+            Some("bseth0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_without_an_address_the_first_port_by_name_is_chosen() {
+        let sys = FakeSysClassNet::new();
+        sys.add("enp3s0", "1", true, false);
+        sys.add("enp2s0", "1", true, false);
+        let mut manager = NetworkManager::new();
+        manager.add_configuration(NetworkConfiguration::new_with_name("enp3s0"));
+        manager.add_configuration(NetworkConfiguration::new_with_name("enp2s0"));
+        assert_eq!(
+            manager.get_ethernet_port_name_in(&sys.root),
+            Some("enp2s0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_a_machine_without_a_port_has_no_ethernet_port() {
+        let sys = FakeSysClassNet::new();
+        sys.add("lo", "772", false, false);
+        let mut manager = NetworkManager::new();
+        manager.add_configuration(NetworkConfiguration::new_with_name("lo"));
+        manager.add_configuration(NetworkConfiguration::new_with_name("enp0s1"));
+        assert_eq!(manager.get_ethernet_port_name_in(&sys.root), None);
+    }
+
+    #[test]
+    fn test_loading_from_the_system_starts_again() {
+        let mut manager = NetworkManager::new();
+        manager.add_configuration(NetworkConfiguration::new_with_name("gone0"));
+        manager.load_settings_from_system();
+        assert!(!manager.has_configuration_for_name("gone0"));
     }
 }
